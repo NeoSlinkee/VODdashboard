@@ -35,7 +35,9 @@
                         {% endif %}
                     </td>
                     <td>
-                        {% if user.role == 'admin' %}
+                        {% if user.role == 'superadmin' %}
+                        <span class="badge bg-dark"><i class="bi bi-shield-fill"></i> Superadmin</span>
+                        {% elif user.role == 'admin' %}
                         <span class="badge bg-danger">Admin</span>
                         {% else %}
                         <span class="badge bg-secondary">Viewer</span>
@@ -44,7 +46,7 @@
                     <td>
                         {% if user.agent %}
                         <i class="bi bi-person-circle"></i> {{ user.agent.name }}
-                        {% elif user.role == 'admin' %}
+                        {% elif user.is_admin %}
                         <span class="text-muted">— All agents —</span>
                         {% else %}
                         <span class="text-warning"><i class="bi bi-exclamation-triangle"></i> Not assigned</span>
@@ -59,7 +61,7 @@
                     </td>
                     <td>{{ user.created_at.strftime('%Y-%m-%d') if user.created_at else '—' }}</td>
                     <td class="text-end">
-                        {% if user.id != current_user.id %}
+                        {% if current_user.can_manage(user) %}
                         <form method="POST" action="{{ url_for('admin_toggle_user', id=user.id) }}" class="d-inline">
                             <button type="submit" class="btn btn-sm {{ 'btn-outline-warning' if user.active else 'btn-outline-success' }}"
                                     title="{{ 'Deactivate' if user.active else 'Activate' }}">
@@ -106,7 +108,10 @@
                         <label for="role" class="form-label fw-semibold">Role</label>
                         <select class="form-select" id="role" name="role" onchange="toggleAgentField(this)">
                             <option value="viewer" selected>Viewer (sees own agent data only)</option>
-                            <option value="admin">Admin (sees all data + manages users)</option>
+                            {% if current_user.is_superadmin %}
+                            <option value="admin">Admin (sees all data + manages viewers)</option>
+                            <option value="superadmin">Superadmin (full control)</option>
+                            {% endif %}
                         </select>
                     </div>
                     <div class="mb-3" id="agentField">
@@ -131,7 +136,7 @@
 
 <script>
 function toggleAgentField(sel) {
-    document.getElementById('agentField').style.display = sel.value === 'admin' ? 'none' : 'block';
+    document.getElementById('agentField').style.display = (sel.value === 'admin' || sel.value === 'superadmin') ? 'none' : 'block';
 }
 </script>
 {% endif %}

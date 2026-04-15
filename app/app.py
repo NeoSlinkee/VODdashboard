@@ -185,7 +185,21 @@ class User(UserMixin, db.Model):
 
     @property
     def is_admin(self):
-        return self.role == 'admin'
+        return self.role in ('admin', 'superadmin')
+
+    @property
+    def is_superadmin(self):
+        return self.role == 'superadmin'
+
+    def can_manage(self, other_user):
+        """Return True if this user can modify/delete the other user."""
+        if self.id == other_user.id:
+            return False
+        if self.is_superadmin:
+            return True
+        if self.role == 'admin' and other_user.role == 'viewer':
+            return True
+        return False
 
 
 @login_manager.user_loader
@@ -2463,8 +2477,13 @@ def admin_add_user():
         flash('A user with that email already exists.', 'warning')
         return redirect(url_for('admin_users'))
 
+    # Only superadmins can create admin/superadmin users
+    if role in ('admin', 'superadmin') and not current_user.is_superadmin:
+        flash('Only superadmins can create admin accounts.', 'warning')
+        return redirect(url_for('admin_users'))
+
     # Non-admin users must have an agent assigned
-    if role != 'admin' and not agent_id:
+    if role not in ('admin', 'superadmin') and not agent_id:
         flash('Non-admin users must be linked to an agent.', 'warning')
         return redirect(url_for('admin_users'))
 
@@ -2489,8 +2508,8 @@ def admin_add_user():
 @admin_required
 def admin_toggle_user(id):
     user = User.query.get_or_404(id)
-    if user.id == current_user.id:
-        flash('You cannot deactivate your own account.', 'warning')
+    if not current_user.can_manage(user):
+        flash('You do not have permission to modify this user.', 'warning')
         return redirect(url_for('admin_users'))
     user.active = not user.active
     db.session.commit()
@@ -2503,8 +2522,8 @@ def admin_toggle_user(id):
 @admin_required
 def admin_delete_user(id):
     user = User.query.get_or_404(id)
-    if user.id == current_user.id:
-        flash('You cannot delete your own account.', 'warning')
+    if not current_user.can_manage(user):
+        flash('You do not have permission to delete this user.', 'warning')
         return redirect(url_for('admin_users'))
     email = user.email
     db.session.delete(user)
@@ -3247,7 +3266,7 @@ def init_db():
 
         # Create default admin user
         if not User.query.filter_by(email='admin@test.com').first():
-            admin = User(email='admin@test.com', role='admin')
+            admin = User(email='admin@test.com', role='superadmin')
             admin.set_password('Admin123!')
             db.session.add(admin)
             db.session.commit()
