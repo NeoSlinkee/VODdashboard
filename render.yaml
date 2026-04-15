@@ -2,6 +2,7 @@ services:
   - type: web
     name: vod-report-tracker
     env: python
+    plan: free
     rootDir: app
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
