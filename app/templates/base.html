@@ -194,9 +194,11 @@
                     <a class="nav-link {{ 'active' if request.endpoint == 'reports' or 'report' in request.endpoint else '' }}" href="{{ url_for('reports') }}">
                         <i class="bi bi-file-earmark-text"></i> Weekly Reports
                     </a>
+                    {% if current_user.is_authenticated and current_user.is_admin %}
                     <a class="nav-link {{ 'active' if 'summary' in request.endpoint else '' }}" href="{{ url_for('weekly_summary') }}">
                         <i class="bi bi-bar-chart"></i> Company Summary
                     </a>
+                    {% endif %}
                     <hr class="mx-3">
                     <small class="px-3 text-muted">ROSTER & CLAIMS</small>
                     <a class="nav-link {{ 'active' if 'roster' in request.endpoint else '' }}" href="{{ url_for('duty_roster') }}">
@@ -213,15 +215,24 @@
                     <a class="nav-link {{ 'active' if request.endpoint in ('sites', 'add_site', 'import_sites') else '' }}" href="{{ url_for('sites') }}">
                         <i class="bi bi-building"></i> My Sites
                     </a>
-                    <a class="nav-link {{ 'active' if 'agent' in request.endpoint else '' }}" href="{{ url_for('agents') }}">
+                    {% if current_user.is_authenticated and current_user.is_admin %}
+                    <a class="nav-link {{ 'active' if 'agent' in request.endpoint and 'admin' not in request.endpoint else '' }}" href="{{ url_for('agents') }}">
                         <i class="bi bi-people"></i> Agents
                     </a>
                     <a class="nav-link {{ 'active' if 'settings' in request.endpoint else '' }}" href="{{ url_for('settings') }}">
                         <i class="bi bi-gear"></i> Settings
                     </a>
+                    {% endif %}
                     <a class="nav-link {{ 'active' if 'reference' in request.endpoint else '' }}" href="{{ url_for('references') }}">
                         <i class="bi bi-folder2-open"></i> Reference Docs
                     </a>
+                    {% if current_user.is_authenticated and current_user.is_admin %}
+                    <hr class="mx-3">
+                    <small class="px-3 text-muted">ADMIN</small>
+                    <a class="nav-link {{ 'active' if 'admin_user' in request.endpoint else '' }}" href="{{ url_for('admin_users') }}">
+                        <i class="bi bi-shield-lock"></i> User Management
+                    </a>
+                    {% endif %}
                 </nav>
             </div>
             <div class="col-md-10 content">

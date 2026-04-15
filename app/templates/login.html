@@ -61,6 +61,13 @@
                 <strong>Demo Environment</strong> – Internal Use Only
             </div>
 
+            {% if forbidden %}
+            <div class="alert alert-danger">
+                <i class="bi bi-shield-exclamation"></i>
+                <strong>Access Denied</strong> – You don't have permission to access that page.
+            </div>
+            {% endif %}
+
             {% with messages = get_flashed_messages(with_categories=true) %}
                 {% if messages %}
                     {% for category, message in messages %}

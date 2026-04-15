@@ -7,7 +7,8 @@ Run with: python app.py
 Access at: http://localhost:5000
 """
 
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response, send_from_directory
+from functools import wraps
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response, send_from_directory, abort
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, UserMixin, login_user, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
@@ -167,7 +168,11 @@ class User(UserMixin, db.Model):
     password_hash = db.Column(db.String(256), nullable=False)
     role = db.Column(db.String(20), default='viewer')
     active = db.Column(db.Boolean, default=True)
+    agent_id = db.Column(db.Integer, db.ForeignKey('agent.id'), nullable=True)
+    created_by = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    agent = db.relationship('Agent', backref='users')
 
     def set_password(self, password):
         self.password_hash = generate_password_hash(password)
@@ -178,10 +183,42 @@ class User(UserMixin, db.Model):
     def get_id(self):
         return str(self.id)
 
+    @property
+    def is_admin(self):
+        return self.role == 'admin'
+
 
 @login_manager.user_loader
 def load_user(user_id):
     return User.query.get(int(user_id))
+
+
+def get_active_agent_id():
+    """Return the current user's agent_id, or None if admin (unscoped)."""
+    if current_user.is_authenticated and not current_user.is_admin:
+        return current_user.agent_id
+    return None
+
+
+def get_active_agent_name():
+    """Return the current user's agent name, or None if admin."""
+    if current_user.is_authenticated and not current_user.is_admin and current_user.agent:
+        return current_user.agent.name
+    return None
+
+
+def admin_required(f):
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not current_user.is_authenticated or not current_user.is_admin:
+            abort(403)
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+@app.errorhandler(403)
+def forbidden(e):
+    return render_template('login.html', forbidden=True), 403
 
 
 @app.before_request
@@ -1240,6 +1277,12 @@ def logout():
 @app.route('/')
 def index():
     """Dashboard with health overview."""
+    agent_id = get_active_agent_id()
+
+    # No-agent warning for viewers
+    if current_user.is_authenticated and not current_user.is_admin and not agent_id:
+        flash('No agent is assigned to your account. Please contact an administrator.', 'warning')
+
     health_summary, site_status = get_site_health_summary()
     agents = Agent.query.filter_by(active=True).all()
     week_ending = get_week_ending()
@@ -1247,9 +1290,12 @@ def index():
     # Recent imports
     recent_imports = ImportLog.query.order_by(ImportLog.timestamp.desc()).limit(5).all()
     
-    # Today's ticket stats
+    # Today's ticket stats — scoped
     today = datetime.now().date()
-    today_stats = TicketStats.query.filter_by(date=today).all()
+    ts_query = TicketStats.query.filter_by(date=today)
+    if agent_id:
+        ts_query = ts_query.filter_by(agent_id=agent_id)
+    today_stats = ts_query.all()
     total_tickets_today = sum(s.tickets_handled for s in today_stats)
     
     # Sites needing attention (critical/warning)
@@ -1471,11 +1517,13 @@ def clear_ruckus_data():
 # ----- Agent Management -----
 
 @app.route('/agents')
+@admin_required
 def agents():
     all_agents = Agent.query.all()
     return render_template('agents.html', agents=all_agents)
 
 @app.route('/agents/add', methods=['GET', 'POST'])
+@admin_required
 def add_agent():
     if request.method == 'POST':
         agent = Agent(
@@ -1491,6 +1539,7 @@ def add_agent():
     return render_template('add_agent.html')
 
 @app.route('/agents/<int:id>/toggle')
+@admin_required
 def toggle_agent(id):
     agent = Agent.query.get_or_404(id)
     agent.active = not agent.active
@@ -1498,6 +1547,7 @@ def toggle_agent(id):
     return redirect(url_for('agents'))
 
 @app.route('/agents/<int:id>/delete', methods=['POST'])
+@admin_required
 def delete_agent(id):
     agent = Agent.query.get_or_404(id)
     name = agent.name
@@ -1515,7 +1565,11 @@ def delete_agent(id):
 
 @app.route('/site-visits')
 def site_visits():
-    visits = SiteVisit.query.order_by(SiteVisit.date.desc()).limit(50).all()
+    agent_id = get_active_agent_id()
+    query = SiteVisit.query
+    if agent_id:
+        query = query.filter_by(agent_id=agent_id)
+    visits = query.order_by(SiteVisit.date.desc()).limit(50).all()
     return render_template('site_visits.html', visits=visits)
 
 @app.route('/site-visits/add', methods=['GET', 'POST'])
@@ -1559,7 +1613,11 @@ def add_site_visit():
 
 @app.route('/service-calls')
 def service_calls():
-    calls = ServiceCall.query.order_by(ServiceCall.date.desc()).limit(100).all()
+    agent_id = get_active_agent_id()
+    query = ServiceCall.query
+    if agent_id:
+        query = query.filter_by(agent_id=agent_id)
+    calls = query.order_by(ServiceCall.date.desc()).limit(100).all()
     return render_template('service_calls.html', calls=calls)
 
 @app.route('/service-calls/add', methods=['GET', 'POST'])
@@ -1755,15 +1813,22 @@ def add_monitoring_note(id):
 
 @app.route('/tickets')
 def tickets():
-    stats = TicketStats.query.order_by(TicketStats.date.desc()).limit(50).all()
+    agent_id = get_active_agent_id()
+    stats_query = TicketStats.query
+    if agent_id:
+        stats_query = stats_query.filter_by(agent_id=agent_id)
+    stats = stats_query.order_by(TicketStats.date.desc()).limit(50).all()
     
-    # Weekly totals
+    # Weekly totals — scoped
     week_ending = get_week_ending()
     week_start = get_week_start(week_ending)
-    weekly_stats = TicketStats.query.filter(
+    wk_query = TicketStats.query.filter(
         TicketStats.date >= week_start,
         TicketStats.date <= week_ending
-    ).all()
+    )
+    if agent_id:
+        wk_query = wk_query.filter_by(agent_id=agent_id)
+    weekly_stats = wk_query.all()
     # pending is a live snapshot - use the most recent value this week
     latest_with_pending = next(
         (s for s in sorted(weekly_stats, key=lambda s: s.date, reverse=True)
@@ -1853,19 +1918,29 @@ def fetch_tickets():
 
 @app.route('/reports')
 def reports():
-    all_reports = WeeklyReport.query.order_by(WeeklyReport.week_ending.desc()).all()
+    agent_id = get_active_agent_id()
+    query = WeeklyReport.query
+    if agent_id:
+        query = query.filter_by(agent_id=agent_id)
+    all_reports = query.order_by(WeeklyReport.week_ending.desc()).all()
     return render_template('reports.html', reports=all_reports)
 
 @app.route('/reports/generate')
 def generate_report():
-    """Generate weekly reports for all agents."""
+    """Generate weekly reports for agents."""
     week_ending = get_week_ending()
-    agents = Agent.query.filter_by(active=True).all()
-    
-    for agent in agents:
-        generate_weekly_report_auto(agent.id, week_ending)
-    
-    flash(f'Generated reports for week ending {week_ending}', 'success')
+    agent_id = get_active_agent_id()
+
+    if agent_id:
+        # Viewer: generate only for their agent
+        generate_weekly_report_auto(agent_id, week_ending)
+        flash(f'Generated your report for week ending {week_ending}', 'success')
+    else:
+        # Admin: generate for all agents
+        agents = Agent.query.filter_by(active=True).all()
+        for agent in agents:
+            generate_weekly_report_auto(agent.id, week_ending)
+        flash(f'Generated reports for week ending {week_ending}', 'success')
     return redirect(url_for('reports'))
 
 @app.route('/reports/<int:id>')
@@ -1996,6 +2071,7 @@ def submit_report(id):
 # ----- Company Summary -----
 
 @app.route('/summary')
+@admin_required
 def weekly_summary():
     week_ending = request.args.get('week')
     if week_ending:
@@ -2139,6 +2215,7 @@ def delete_reference(id):
 # ----- Settings -----
 
 @app.route('/settings', methods=['GET', 'POST'])
+@admin_required
 def settings():
     agents = Agent.query.all()
     
@@ -2180,6 +2257,7 @@ def settings():
     return render_template('settings.html', config=config, agents=agents)
 
 @app.route('/settings/test-freshdesk')
+@admin_required
 def test_freshdesk():
     """Test Freshdesk connectivity and resolve the agent ID."""
     base = _freshdesk_base_url()
@@ -2198,6 +2276,7 @@ def test_freshdesk():
 
 
 @app.route('/settings/save', methods=['POST'])
+@admin_required
 def save_settings():
     """Save settings (redirect target)."""
     section = request.form.get('section', '')
@@ -2249,7 +2328,11 @@ def save_settings():
 
 @app.route('/leave')
 def leave_requests():
-    leaves = LeaveRequest.query.order_by(LeaveRequest.created_at.desc()).all()
+    agent_name = get_active_agent_name()
+    query = LeaveRequest.query
+    if agent_name:
+        query = query.filter_by(agent_name=agent_name)
+    leaves = query.order_by(LeaveRequest.created_at.desc()).all()
     today = datetime.now().date()
     return render_template(
         'leave_requests.html',
@@ -2348,6 +2431,87 @@ def set_current_agent(id):
     # For now just redirect (is_current would need a new column)
     flash('Agent selection saved.', 'success')
     return redirect(url_for('settings'))
+
+
+# ----- Admin User Management -----
+
+@app.route('/admin/users')
+@admin_required
+def admin_users():
+    users = User.query.order_by(User.created_at.desc()).all()
+    all_agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
+    return render_template('admin_users.html', users=users, agents=all_agents)
+
+
+@app.route('/admin/users/add', methods=['POST'])
+@admin_required
+def admin_add_user():
+    email = (request.form.get('email') or '').strip().lower()
+    password = (request.form.get('password') or '').strip()
+    role = request.form.get('role', 'viewer')
+    agent_id = request.form.get('agent_id', type=int)
+
+    if not email or not password:
+        flash('Email and password are required.', 'warning')
+        return redirect(url_for('admin_users'))
+
+    if len(password) < 6:
+        flash('Password must be at least 6 characters.', 'warning')
+        return redirect(url_for('admin_users'))
+
+    if User.query.filter_by(email=email).first():
+        flash('A user with that email already exists.', 'warning')
+        return redirect(url_for('admin_users'))
+
+    # Non-admin users must have an agent assigned
+    if role != 'admin' and not agent_id:
+        flash('Non-admin users must be linked to an agent.', 'warning')
+        return redirect(url_for('admin_users'))
+
+    if agent_id and not Agent.query.get(agent_id):
+        flash('Selected agent does not exist.', 'warning')
+        return redirect(url_for('admin_users'))
+
+    user = User(
+        email=email,
+        role=role,
+        agent_id=agent_id if agent_id else None,
+        created_by=current_user.id
+    )
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+    flash(f'User {email} created as {role}.', 'success')
+    return redirect(url_for('admin_users'))
+
+
+@app.route('/admin/users/<int:id>/toggle', methods=['POST'])
+@admin_required
+def admin_toggle_user(id):
+    user = User.query.get_or_404(id)
+    if user.id == current_user.id:
+        flash('You cannot deactivate your own account.', 'warning')
+        return redirect(url_for('admin_users'))
+    user.active = not user.active
+    db.session.commit()
+    status = 'activated' if user.active else 'deactivated'
+    flash(f'User {user.email} {status}.', 'success')
+    return redirect(url_for('admin_users'))
+
+
+@app.route('/admin/users/<int:id>/delete', methods=['POST'])
+@admin_required
+def admin_delete_user(id):
+    user = User.query.get_or_404(id)
+    if user.id == current_user.id:
+        flash('You cannot delete your own account.', 'warning')
+        return redirect(url_for('admin_users'))
+    email = user.email
+    db.session.delete(user)
+    db.session.commit()
+    flash(f'User {email} deleted.', 'success')
+    return redirect(url_for('admin_users'))
+
 
 # ----- Duty Roster -----
 
@@ -2571,7 +2735,8 @@ def duty_roster():
         public_holidays=public_holidays,
         prev_year=prev_year, prev_month=prev_month,
         next_year=next_year, next_month=next_month,
-        today=today
+        today=today,
+        current_agent_name=get_active_agent_name()
     )
 
 
@@ -2721,8 +2886,9 @@ def standby_claims():
     today = date_cls.today()
     year = int(request.args.get('year', today.year))
     month = int(request.args.get('month', today.month))
-    # Default to Chris — only Chris needs to submit claims
-    agent_filter = request.args.get('agent', 'Chris')
+    # Default to current user's agent name, or Chris for admin
+    default_agent = get_active_agent_name() or 'Chris'
+    agent_filter = request.args.get('agent', default_agent)
 
     first_day = date_cls(year, month, 1)
     last_day = date_cls(year, month, calendar.monthrange(year, month)[1])
@@ -3043,6 +3209,17 @@ def init_db():
             # monitoring_escalation table
             try:
                 _conn.execute(_text('SELECT 1 FROM monitoring_escalation LIMIT 1'))
+            except Exception:
+                _conn.commit()
+            # user.agent_id + user.created_by (schema upgrade)
+            try:
+                u_cols = [row[1] for row in _conn.execute(_text('PRAGMA table_info(user)'))]
+                if 'agent_id' not in u_cols:
+                    _conn.execute(_text('ALTER TABLE user ADD COLUMN agent_id INTEGER REFERENCES agent(id)'))
+                    _conn.commit()
+                if 'created_by' not in u_cols:
+                    _conn.execute(_text('ALTER TABLE user ADD COLUMN created_by INTEGER'))
+                    _conn.commit()
             except Exception:
                 _conn.commit()
         
