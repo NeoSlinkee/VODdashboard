@@ -1,0 +1,202 @@
+{% extends 'base.html' %}
+{% block title %}Standby Claims — {{ month_name }} {{ year }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-file-earmark-ruled"></i> Standby Claims</h2>
+    <div class="text-muted" style="font-size:0.9rem;">Roster-based calculation only</div>
+</div>
+
+<!-- Month navigation -->
+<div class="card mb-3">
+    <div class="card-body py-2 d-flex align-items-center gap-3 flex-wrap">
+        <a href="{{ url_for('standby_claims', year=prev_year, month=prev_month, agent=agent_filter) }}"
+           class="btn btn-sm btn-outline-secondary"><i class="bi bi-chevron-left"></i></a>
+        <strong>{{ month_name }} {{ year }}</strong>
+        <a href="{{ url_for('standby_claims', year=next_year, month=next_month, agent=agent_filter) }}"
+           class="btn btn-sm btn-outline-secondary"><i class="bi bi-chevron-right"></i></a>
+
+        <span class="ms-auto">
+            <form method="get" action="{{ url_for('export_standby_claim') }}" target="_blank"
+                  class="d-flex align-items-end gap-2 flex-wrap">
+                <input type="hidden" name="year" value="{{ year }}">
+                <input type="hidden" name="month" value="{{ month }}">
+                <input type="hidden" name="agent" value="{{ agent_filter }}">
+
+                <div>
+                    <label class="form-label mb-1" style="font-size:0.72rem;color:#666;">Employee Signature Name</label>
+                    <input name="employee_signature_name" class="form-control form-control-sm" style="min-width:160px;"
+                           value="{{ agent_filter }}">
+                </div>
+                <div>
+                    <label class="form-label mb-1" style="font-size:0.72rem;color:#666;">Employee Date</label>
+                    <input type="date" name="employee_signature_date" class="form-control form-control-sm"
+                           value="{{ today_iso }}">
+                </div>
+                <div>
+                    <label class="form-label mb-1" style="font-size:0.72rem;color:#666;">Manager Signature Name</label>
+                    <input name="manager_signature_name" class="form-control form-control-sm" style="min-width:170px;"
+                           placeholder="Optional">
+                </div>
+                <div>
+                    <label class="form-label mb-1" style="font-size:0.72rem;color:#666;">Manager Date</label>
+                    <input type="date" name="manager_signature_date" class="form-control form-control-sm">
+                </div>
+
+                <button class="btn btn-sm btn-success" type="submit">
+                    <i class="bi bi-printer"></i> Export / Print Claim
+                </button>
+            </form>
+        </span>
+    </div>
+</div>
+
+<!-- Pay summary card -->
+<div class="row mb-4">
+    {% set eng_color = engineers.get(agent_filter, {}).get('color', '#2c3e50') %}
+
+    <!-- Engineer badge -->
+    <div class="col-md-3">
+        <div class="card text-center h-100" style="border-top: 4px solid {{ eng_color }};">
+            <div class="card-body d-flex flex-column justify-content-center">
+                <div style="font-size:1.8rem;font-weight:800;color:{{ eng_color }};">{{ agent_filter }}</div>
+                <div class="text-muted" style="font-size:0.82rem;">Night standby engineer</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Roster days -->
+    <div class="col-md-2">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div style="font-size:2rem;font-weight:700;color:#2c3e50;">{{ standby_days }}</div>
+                <div class="text-muted" style="font-size:0.82rem;">Roster days</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Weekday -->
+    <div class="col-md-2">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div style="font-size:1.5rem;font-weight:700;color:#2c3e50;">{{ day_type_counts.weekday }}</div>
+                <div class="text-muted" style="font-size:0.8rem;">Weekdays</div>
+                <div style="font-size:0.78rem;color:#27ae60;" class="mt-1">R{{ '%.2f'|format(rates.weekday) }}/day</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Saturday -->
+    <div class="col-md-2">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div style="font-size:1.5rem;font-weight:700;color:#2c3e50;">{{ day_type_counts.saturday }}</div>
+                <div class="text-muted" style="font-size:0.8rem;">Saturdays</div>
+                <div style="font-size:0.78rem;color:#27ae60;" class="mt-1">R{{ '%.2f'|format(rates.saturday) }}/day</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Sunday/Public Holiday -->
+    <div class="col-md-2">
+        <div class="card text-center h-100">
+            <div class="card-body">
+                <div style="font-size:1.1rem;font-weight:700;color:#2c3e50;">{{ day_type_counts.sunday }} / {{ day_type_counts.public_holiday }}</div>
+                <div class="text-muted" style="font-size:0.8rem;">Sun / Public Hol</div>
+                <div style="font-size:0.78rem;color:#27ae60;" class="mt-1">R{{ '%.2f'|format(rates.sunday) }} / R{{ '%.2f'|format(rates.public_holiday) }}</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- TOTAL -->
+    <div class="col-md-1">
+        <div class="card text-center h-100" style="border-top: 4px solid #27ae60;">
+            <div class="card-body d-flex flex-column justify-content-center">
+                {% if rates_configured %}
+                <div style="font-size:1.5rem;font-weight:800;color:#27ae60;">R{{ '{:,.2f}'.format(total_pay) }}</div>
+                <div class="text-muted" style="font-size:0.78rem;font-weight:600;">TOTAL</div>
+                {% else %}
+                <a href="{{ url_for('settings') }}" class="btn btn-sm btn-outline-warning" style="font-size:0.75rem;">
+                    <i class="bi bi-gear"></i> Set rates
+                </a>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Day-by-day breakdown: roster days only -->
+{% if day_rows %}
+<div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <span><i class="bi bi-calendar-check"></i> {{ month_name }} {{ year }} — {{ agent_filter }}'s Standby Days</span>
+        <span class="text-muted" style="font-size:0.82rem;">Fixed shift windows applied automatically</span>
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th style="width:110px;">Date</th>
+                    <th style="width:90px;">Day</th>
+                    <th style="width:120px;">Shift Type</th>
+                    <th style="width:120px;">Shift Window</th>
+                    <th style="width:95px;">Rate</th>
+                    <th style="width:90px;">Hours</th>
+                    <th style="width:100px;">Amount</th>
+                </tr>
+            </thead>
+            <tbody>
+            {% for row in day_rows %}
+            <tr>
+                <td><strong>{{ row.date.strftime('%d %b') }}</strong></td>
+                <td class="text-muted">{{ row.date.strftime('%A') }}</td>
+                <td>
+                    {% if row.day_type == 'public_holiday' %}
+                    <span class="badge bg-danger">Public Holiday</span>
+                    {% elif row.day_type == 'sunday' %}
+                    <span class="badge bg-warning text-dark">Sunday</span>
+                    {% elif row.day_type == 'saturday' %}
+                    <span class="badge bg-info text-dark">Saturday</span>
+                    {% else %}
+                    <span class="badge bg-secondary">Weekday</span>
+                    {% endif %}
+                </td>
+                <td>
+                    <span class="text-muted">{{ row.shift_start }} - {{ row.shift_end }}</span>
+                </td>
+                <td>
+                    <span class="fw-semibold text-success">R{{ '%.2f'|format(row.day_rate) }}</span>
+                </td>
+                <td>
+                    <strong>{{ '%.2f'|format(row.hours) }} h</strong>
+                </td>
+                <td>
+                    <span class="fw-semibold text-success">R{{ '%.2f'|format(row.day_rate) }}</span>
+                </td>
+            </tr>
+            {% endfor %}
+            </tbody>
+            <tfoot>
+                <tr class="table-light fw-semibold">
+                    <td colspan="5" class="text-end">Totals:</td>
+                    <td>{{ '%.2f'|format(total_hours) }} h</td>
+                    <td class="text-success">R{{ '%.2f'|format(total_pay) }}</td>
+                </tr>
+            </tfoot>
+        </table>
+    </div>
+</div>
+
+{% elif standby_days == 0 %}
+<div class="alert alert-info">
+    <i class="bi bi-calendar-x"></i>
+    No standby days found on the roster for {{ agent_filter }} in {{ month_name }} {{ year }}.
+    <a href="{{ url_for('duty_roster', year=year, month=month) }}">Assign roster days first.</a>
+</div>
+{% else %}
+<div class="alert alert-info">
+    No standby days found for {{ agent_filter }} in {{ month_name }} {{ year }}.
+    <a href="{{ url_for('duty_roster', year=year, month=month) }}">Assign roster days first.</a>
+</div>
+{% endif %}
+{% endblock %}

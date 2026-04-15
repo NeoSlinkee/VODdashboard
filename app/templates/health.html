@@ -1,0 +1,136 @@
+{% extends 'base.html' %}
+{% block title %}Site Health - VOD Report Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-heart-pulse"></i> Site Health Overview</h2>
+    <a href="{{ url_for('import_ruckus') }}" class="btn btn-primary">
+        <i class="bi bi-cloud-upload"></i> Import Ruckus Data
+    </a>
+</div>
+
+<!-- Health Summary -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card success">
+            <div class="number">{{ health_summary.healthy }}</div>
+            <div class="label"><span class="health-dot healthy"></span>Healthy</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card" style="color: #f39c12;">
+            <div class="number" style="color: #f39c12;">{{ health_summary.warning }}</div>
+            <div class="label"><span class="health-dot warning"></span>Warning</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card warning">
+            <div class="number">{{ health_summary.critical }}</div>
+            <div class="label"><span class="health-dot critical"></span>Critical</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="number">{{ health_summary.unknown }}</div>
+            <div class="label"><span class="health-dot unknown"></span>No Data</div>
+        </div>
+    </div>
+</div>
+
+<!-- Sites Table -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-building"></i> All Monitored Sites
+    </div>
+    <div class="card-body">
+        <table class="table table-hover">
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Site Name</th>
+                    <th>Region</th>
+                    <th>Confidence</th>
+                    <th class="text-center">Total APs</th>
+                    <th class="text-center">Offline</th>
+                    <th class="text-center">Excluded APs</th>
+                    <th>Last Checked</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for s in site_status %}
+                <tr class="health-card {{ s.status }}">
+                    <td>
+                        <span class="health-dot {{ s.status }}"></span>
+                        <span class="badge bg-{{ 'success' if s.status == 'healthy' else 'warning' if s.status == 'warning' else 'danger' if s.status == 'critical' else 'secondary' }}">
+                            {{ s.status|capitalize }}
+                        </span>
+                    </td>
+                    <td><strong>{{ s.site.name }}</strong></td>
+                    <td>
+                        {% if s.site.region == 'within_reach' %}
+                        <span class="badge bg-primary">Within Reach</span>
+                        {% elif s.site.region == 'far_reach' %}
+                        <span class="badge bg-secondary">Far Reach</span>
+                        {% else %}
+                        -
+                        {% endif %}
+                    </td>
+                    <td>
+                        <span class="badge bg-{{ 'success' if s.confidence == 'high' else 'warning' if s.confidence == 'medium' else 'secondary' }}">
+                            {{ s.confidence|capitalize }}
+                        </span>
+                        <small class="text-muted d-block">{{ s.source_basis }}</small>
+                    </td>
+                    <td class="text-center">{{ s.total_aps }}</td>
+                    <td class="text-center">
+                        {% if s.aps_offline > 0 %}
+                        <span class="text-danger fw-bold">{{ s.aps_offline }}</span>
+                        {% else %}
+                        <span class="text-success">0</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if s.excluded_aps > 0 %}
+                        <span class="badge bg-info">{{ s.excluded_aps }}</span>
+                        {% else %}
+                        <span class="text-muted">0</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if s.last_checked %}
+                        {{ s.last_checked.strftime('%Y-%m-%d %H:%M') }}
+                        {% else %}
+                        <span class="text-muted">Never</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card mt-4 bg-light">
+    <div class="card-body">
+        <h6><i class="bi bi-info-circle"></i> Status Definitions</h6>
+        <div class="row">
+            <div class="col-md-3">
+                <span class="health-dot healthy"></span>
+                <strong>Healthy:</strong> All APs online
+            </div>
+            <div class="col-md-3">
+                <span class="health-dot warning"></span>
+                <strong>Warning:</strong> &lt;20% APs offline
+            </div>
+            <div class="col-md-3">
+                <span class="health-dot critical"></span>
+                <strong>Critical:</strong> ≥20% APs offline
+            </div>
+            <div class="col-md-3">
+                <span class="health-dot unknown"></span>
+                <strong>Unknown:</strong> No recent data
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}Add Site - VOD Report Tracker{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-building"></i> Add New Site</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Site Name *</label>
+                        <input type="text" name="name" class="form-control" required placeholder="e.g., Piazza Montecasino">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Region *</label>
+                        <select name="region" class="form-select" required>
+                            <option value="within_reach">Within Reach</option>
+                            <option value="far_reach">Far Reach</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Ruckus Zone Name</label>
+                        <input type="text" name="ruckus_zone_name" class="form-control" placeholder="Leave blank to use site name">
+                        <small class="text-muted">The exact name as it appears in Ruckus controller. Used for matching during import.</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Total APs</label>
+                        <input type="number" name="total_aps" class="form-control" min="0" value="0">
+                        <small class="text-muted">Will be updated automatically on Ruckus import.</small>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> Add Site
+                        </button>
+                        <a href="{{ url_for('sites') }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

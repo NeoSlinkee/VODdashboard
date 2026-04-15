@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weekly Report - {{ report.agent.name }} - {{ report.week_ending }}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        @page {
+            size: A4 portrait;
+            margin: 8mm;
+        }
+
+        body {
+            font-family: Arial, sans-serif;
+            background: #fff;
+            color: #222;
+            font-size: 12px;
+            line-height: 1.25;
+            margin: 0;
+        }
+
+        .report-page {
+            width: 194mm;
+            margin: 0 auto;
+        }
+
+        .header {
+            margin-bottom: 8px;
+            border-bottom: 1px solid #ddd;
+            padding-bottom: 6px;
+        }
+
+        .title {
+            font-size: 24px;
+            font-weight: 700;
+            margin: 0;
+        }
+
+        .subtitle {
+            color: #666;
+            margin: 0;
+            font-size: 13px;
+        }
+
+        .status-badge {
+            font-size: 11px;
+            padding: 4px 8px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(6, 1fr);
+            gap: 10px;
+            margin: 12px 0;
+        }
+
+        .stat-card {
+            border: 1px solid #e5e5e5;
+            border-radius: 6px;
+            text-align: center;
+            padding: 10px 6px;
+        }
+
+        .stat-card .number {
+            font-size: 31px;
+            font-weight: 700;
+            margin-bottom: 2px;
+            color: #2c3e50;
+        }
+
+        .stat-card .label {
+            font-size: 10px;
+            color: #6d6d6d;
+            text-transform: uppercase;
+        }
+
+        .number.info { color: #3498db; }
+        .number.success { color: #27ae60; }
+        .number.warning { color: #e74c3c; }
+
+        .section-card {
+            border: 1px solid #e6e6e6;
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .section-header {
+            font-size: 13px;
+            font-weight: 700;
+            padding: 7px 9px;
+            border-bottom: 1px solid #ececec;
+            background: #fafafa;
+        }
+
+        .section-body {
+            padding: 7px 9px;
+        }
+
+        .table {
+            margin-bottom: 0;
+            font-size: 11px;
+        }
+
+        .table th,
+        .table td {
+            padding: 4px 5px;
+            vertical-align: top;
+        }
+
+        .note-text {
+            margin: 0 0 4px 0;
+            font-size: 10px;
+            line-height: 1.35;
+            word-wrap: break-word;
+        }
+
+        .muted {
+            color: #6c757d;
+            font-size: 10px;
+        }
+
+        .page-note {
+            font-size: 10px;
+            color: #666;
+            text-align: right;
+            margin-top: 4px;
+        }
+
+        .row-tight {
+            margin-bottom: 0;
+        }
+
+        .badge {
+            font-size: 10px;
+            padding: 2px 6px;
+        }
+
+        @media print {
+            html, body {
+                width: 210mm;
+                height: 297mm;
+            }
+        }
+    </style>
+</head>
+<body>
+    <script>
+        window.addEventListener('load', function () {
+            window.print();
+        });
+    </script>
+
+    <div class="report-page">
+    <div class="header d-flex justify-content-between align-items-start">
+        <div>
+            <h1 class="title"><i class="bi bi-file-earmark-text"></i> Weekly Report</h1>
+            <p class="subtitle">{{ report.agent.name }} - Week Ending {{ report.week_ending }}</p>
+        </div>
+        <div>
+            {% if report.submitted_at %}
+            <span class="badge bg-success status-badge">Submitted {{ report.submitted_at.strftime('%Y-%m-%d %H:%M') }}</span>
+            {% else %}
+            <span class="badge bg-warning text-dark status-badge">Draft</span>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="stats">
+        <div class="stat-card">
+            <div class="number">{{ report.sites_visited }}</div>
+            <div class="label">Sites Visited</div>
+        </div>
+        <div class="stat-card">
+            <div class="number info">{{ report.sites_monitored }}</div>
+            <div class="label">Sites Monitored</div>
+        </div>
+        <div class="stat-card">
+            <div class="number {{ 'warning' if report.aps_offline_total > 0 else 'success' }}">{{ report.aps_offline_total }}</div>
+            <div class="label">APs Offline</div>
+        </div>
+        <div class="stat-card">
+            <div class="number">{{ report.critical_incidents or 0 }}</div>
+            <div class="label">Critical Incidents</div>
+        </div>
+        <div class="stat-card">
+            <div class="number">{{ report.tickets_handled }}</div>
+            <div class="label">Tickets Handled</div>
+        </div>
+        <div class="stat-card">
+            <div class="number success">{{ report.tickets_closed }}</div>
+            <div class="label">Tickets Closed</div>
+        </div>
+    </div>
+
+    <div class="row row-tight">
+        <div class="col-6">
+            <div class="section-card">
+                <div class="section-header"><i class="bi bi-geo-alt"></i> Site Visits</div>
+                <div class="section-body">
+                    {% if visits %}
+                    <table class="table table-sm">
+                        <thead>
+                            <tr><th>Date</th><th>Site</th><th>Discussion</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for visit in visits %}
+                            <tr>
+                                <td>{{ visit.date }}</td>
+                                <td>{{ visit.site_name }}</td>
+                                <td>{{ (visit.discussion_topics or '')[:120] }}{% if (visit.discussion_topics or '')|length > 120 %}...{% endif %}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p class="muted mb-0">No site visits this week.</p>
+                    {% endif %}
+                    {% if total_visits > visits|length %}
+                    <p class="page-note">Showing {{ visits|length }} of {{ total_visits }} visits</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+        <div class="col-6">
+            <div class="section-card">
+                <div class="section-header"><i class="bi bi-wifi"></i> Monitoring Logs</div>
+                <div class="section-body">
+                    {% if logs %}
+                    <table class="table table-sm">
+                        <thead>
+                            <tr><th>Date</th><th>Site</th><th>APs</th><th>Status</th></tr>
+                        </thead>
+                        <tbody>
+                            {% for log in logs %}
+                            <tr>
+                                <td>{{ log.timestamp.strftime('%Y-%m-%d') }}</td>
+                                <td>{{ log.site.name if log.site else '-' }}</td>
+                                <td>{{ log.aps_offline }}/{{ log.total_aps }}</td>
+                                <td>
+                                    <span class="badge bg-{{ 'success' if log.status == 'healthy' else ('danger' if log.status == 'critical' else 'warning text-dark') }}">
+                                        {{ log.status }}
+                                    </span>
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% else %}
+                    <p class="muted mb-0">No monitoring logs this week.</p>
+                    {% endif %}
+                    {% if total_logs > logs|length %}
+                    <p class="page-note">Showing {{ logs|length }} of {{ total_logs }} logs</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="section-card">
+        <div class="section-header"><i class="bi bi-headset"></i> Service Calls</div>
+        <div class="section-body">
+            {% if calls %}
+            <table class="table table-sm">
+                <thead>
+                    <tr><th>Date</th><th>Ticket</th><th>Summary</th><th>Status</th></tr>
+                </thead>
+                <tbody>
+                    {% for call in calls %}
+                    <tr>
+                        <td>{{ call.date }}</td>
+                        <td>{{ call.ticket_number or '-' }}</td>
+                        <td>{{ (call.summary or '')[:150] }}{% if (call.summary or '')|length > 150 %}...{% endif %}</td>
+                        <td>{{ call.status }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+            {% else %}
+            <p class="muted mb-0">No service calls this week.</p>
+            {% endif %}
+            {% if total_calls > calls|length %}
+            <p class="page-note">Showing {{ calls|length }} of {{ total_calls }} calls</p>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="section-card mb-0">
+        <div class="section-header"><i class="bi bi-chat-quote"></i> Notes</div>
+        <div class="section-body">
+            <p class="note-text"><strong>Achievements:</strong> {{ report.achievements or 'None noted' }}</p>
+            <p class="note-text"><strong>Challenges:</strong> {{ report.challenges or 'None noted' }}</p>
+            <p class="note-text mb-0"><strong>Notes:</strong> {{ report.notes or 'None' }}</p>
+        </div>
+    </div>
+    </div>
+</body>
+</html>

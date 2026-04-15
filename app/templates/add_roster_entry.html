@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% block title %}Add Roster Entry{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-calendar-plus"></i> Assign Night Standby</h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Date</label>
+                        <input type="date" name="date" class="form-control"
+                               value="{{ prefill_date }}" required>
+                        <div class="form-text">One engineer is assigned night standby per day.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Engineer on Night Standby</label>
+                        <div class="d-flex gap-3 flex-wrap mt-1">
+                            {% for name, info in engineers.items() %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio" name="agent_name"
+                                       id="eng_{{ name }}" value="{{ name }}" required>
+                                <label class="form-check-label" for="eng_{{ name }}">
+                                    <span class="badge" style="background:{{ info.color }};color:{{ info.text }};font-size:0.9rem;padding:5px 12px;">
+                                        {{ name }}
+                                    </span>
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Notes <span class="text-muted fw-normal">(optional)</span></label>
+                        <input type="text" name="notes" class="form-control" placeholder="e.g. swapped with Kudzayi">
+                    </div>
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">Save Entry</button>
+                        <a href="{{ url_for('duty_roster') }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

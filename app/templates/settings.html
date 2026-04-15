@@ -1,0 +1,285 @@
+{% extends 'base.html' %}
+{% block title %}Settings - VOD Report Tracker{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-gear"></i> Settings</h2>
+
+<div class="row">
+    <!-- Freshdesk Configuration -->
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <i class="bi bi-cloud"></i> Freshdesk API Configuration
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('save_settings') }}">
+                    <input type="hidden" name="section" value="freshdesk">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Freshdesk Domain</label>
+                        <div class="input-group">
+                            <span class="input-group-text">https://</span>
+                            <input type="text" name="freshdesk_domain" class="form-control" 
+                                value="{{ config.get('freshdesk_domain', '') }}" placeholder="yourcompany.freshdesk.com">
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">API Key</label>
+                        <input type="password" name="freshdesk_api_key" class="form-control" 
+                            value="{{ config.get('freshdesk_api_key', '') }}" placeholder="Enter your Freshdesk API key">
+                        <small class="text-muted">Found in Profile Settings > Your API Key</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Agent Email (for filtering)</label>
+                        <input type="email" name="freshdesk_agent_email" class="form-control" 
+                            value="{{ config.get('freshdesk_agent_email', '') }}" placeholder="your.email@company.com">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Save Freshdesk Settings
+                    </button>
+                    <a href="{{ url_for('test_freshdesk') }}" class="btn btn-outline-secondary ms-2">
+                        <i class="bi bi-plug"></i> Test Connection
+                    </a>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Agent Settings -->
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-person"></i> Agents</span>
+                <button class="btn btn-sm btn-primary" data-bs-toggle="modal" data-bs-target="#addAgentModal">
+                    <i class="bi bi-plus-lg"></i> Add
+                </button>
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr><th>Name</th><th>Email</th><th>Current</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for agent in agents %}
+                        <tr>
+                            <td>{{ agent.name }}</td>
+                            <td>{{ agent.email or '-' }}</td>
+                            <td>
+                                {% if agent.is_current %}
+                                <span class="badge bg-success">Current</span>
+                                {% else %}
+                                <a href="{{ url_for('set_current_agent', id=agent.id) }}" class="btn btn-sm btn-outline-secondary">
+                                    Set as Current
+                                </a>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="3" class="text-muted text-center">No agents configured</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Report Settings -->
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-file-earmark-text"></i> Report Settings
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('save_settings') }}">
+                    <input type="hidden" name="section" value="report">
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Report Due Day</label>
+                        <select name="report_due_day" class="form-select">
+                            <option value="friday" {{ 'selected' if config.get('report_due_day') == 'friday' else '' }}>Friday</option>
+                            <option value="monday" {{ 'selected' if config.get('report_due_day') == 'monday' else '' }}>Monday</option>
+                            <option value="sunday" {{ 'selected' if config.get('report_due_day') == 'sunday' else '' }}>Sunday</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Report Due Time</label>
+                        <input type="time" name="report_due_time" class="form-control" 
+                            value="{{ config.get('report_due_time', '14:00') }}">
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Save Report Settings
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6><i class="bi bi-info-circle"></i> About Settings</h6>
+                <p><strong>Freshdesk API:</strong> Configure to automatically pull your ticket statistics instead of manual entry.</p>
+                <p><strong>Agents:</strong> Add team members who submit reports. Set yourself as "Current" for easy form auto-fill.</p>
+                <p class="mb-0"><strong>Report Settings:</strong> Configure when weekly reports are due.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Standby Pay Rates -->
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-currency-exchange"></i> Standby Pay Rates
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('save_settings') }}">
+                    <input type="hidden" name="section" value="standby_rates">
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Weekday Rate <span class="text-muted fw-normal">(R per day)</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text">R</span>
+                            <input type="number" step="0.01" min="0" name="standby_rate_weekday" class="form-control"
+                                   value="{{ config.get('standby_rate_weekday', '350') }}"
+                                   placeholder="e.g. 350.00">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Saturday Rate <span class="text-muted fw-normal">(R per day)</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text">R</span>
+                            <input type="number" step="0.01" min="0" name="standby_rate_saturday" class="form-control"
+                                   value="{{ config.get('standby_rate_saturday', '500') }}"
+                                   placeholder="e.g. 500.00">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Sunday Rate <span class="text-muted fw-normal">(R per day)</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text">R</span>
+                            <input type="number" step="0.01" min="0" name="standby_rate_sunday" class="form-control"
+                                   value="{{ config.get('standby_rate_sunday', '700') }}"
+                                   placeholder="e.g. 700.00">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Public Holiday Rate <span class="text-muted fw-normal">(R per day)</span></label>
+                        <div class="input-group">
+                            <span class="input-group-text">R</span>
+                            <input type="number" step="0.01" min="0" name="standby_rate_public_holiday" class="form-control"
+                                   value="{{ config.get('standby_rate_public_holiday', '700') }}"
+                                   placeholder="e.g. 700.00">
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Public Holiday Dates <span class="text-muted fw-normal">(optional)</span></label>
+                        <textarea name="standby_public_holidays" rows="3" class="form-control" placeholder="YYYY-MM-DD, YYYY-MM-DD">{{ config.get('standby_public_holidays', '') }}</textarea>
+                        <div class="form-text">Comma or newline separated dates. These dates use the Public Holiday rate.</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Save Pay Rates
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6><i class="bi bi-info-circle"></i> About Standby Pay</h6>
+                <p>These rates are used to calculate your monthly standby claim value from your rostered days.</p>
+                <p><strong>No call-out hourly rate</strong> is used. Times are still captured for reporting/audit only.</p>
+                <p class="mb-0">Set Public Holiday dates to override weekday/weekend classification for those specific days.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-calendar-event"></i> Public Holidays + Leave Approval
+            </div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('save_settings') }}">
+                    <input type="hidden" name="section" value="public_holidays">
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Leave Approval Email</label>
+                        <input type="email" name="leave_approval_email" class="form-control"
+                               value="{{ config.get('leave_approval_email', 'luke@company.com') }}"
+                               placeholder="luke@company.com">
+                        <div class="form-text">Leave requests will notify this approver.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Public Holidays JSON</label>
+                        <textarea name="public_holidays_json" rows="10" class="form-control"
+                                  style="font-family:Consolas, 'Courier New', monospace;">{{ config.get('public_holidays_json', '{}') }}</textarea>
+                        <div class="form-text">Format: {"YYYY-MM-DD": "Holiday Name"}</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Save Holiday Settings
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6><i class="bi bi-info-circle"></i> How This Is Used</h6>
+                <p>Holiday dates are highlighted in duty roster and weekly reports.</p>
+                <p>Standby calculations treat holiday dates as public holiday rate days.</p>
+                <p class="mb-0">Leave requests email the approval contact and use roster coverage rules when approved.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Agent Modal -->
+<div class="modal fade" id="addAgentModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form method="POST" action="{{ url_for('add_agent') }}">
+                <div class="modal-header">
+                    <h5 class="modal-title">Add Agent</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="form-label">Name</label>
+                        <input type="text" name="name" class="form-control" required>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email (Optional)</label>
+                        <input type="email" name="email" class="form-control">
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-primary">Add Agent</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

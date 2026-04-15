@@ -1,0 +1,269 @@
+{% extends 'base.html' %}
+{% block title %}Monitoring Log - VOD Report Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-display"></i> Monitoring Log</h2>
+    <a href="{{ url_for('import_ruckus') }}" class="btn btn-primary">
+        <i class="bi bi-cloud-upload"></i> Import New Data
+    </a>
+</div>
+
+<!-- Filter -->
+<div class="card mb-4">
+    <div class="card-body">
+        <form method="GET" class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">Filter by Site</label>
+                <select name="site_id" class="form-select">
+                    <option value="">All Sites</option>
+                    {% for site in sites %}
+                    <option value="{{ site.id }}" {{ 'selected' if request.args.get('site_id')|int == site.id else '' }}>
+                        {{ site.name }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Filter by Status</label>
+                <select name="status" class="form-select">
+                    <option value="">All Statuses</option>
+                    <option value="healthy" {{ 'selected' if request.args.get('status') == 'healthy' else '' }}>Healthy</option>
+                    <option value="warning" {{ 'selected' if request.args.get('status') == 'warning' else '' }}>Warning</option>
+                    <option value="critical" {{ 'selected' if request.args.get('status') == 'critical' else '' }}>Critical</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Find Offline AP</label>
+                <input
+                    type="text"
+                    name="ap_query"
+                    class="form-control"
+                    value="{{ request.args.get('ap_query', '') }}"
+                    placeholder="Type AP name"
+                >
+            </div>
+            <div class="col-md-2">
+                <div class="form-check mt-4 pt-1">
+                    <input class="form-check-input" type="checkbox" id="only_offline" name="only_offline" value="1" {{ 'checked' if request.args.get('only_offline', '1') != '0' else '' }}>
+                    <label class="form-check-label" for="only_offline">
+                        Offline only
+                    </label>
+                </div>
+            </div>
+            <div class="col-md-2 d-flex gap-2">
+                <button type="submit" class="btn btn-outline-primary w-100">
+                    <i class="bi bi-filter"></i> Filter
+                </button>
+                <a href="{{ url_for('monitoring') }}" class="btn btn-outline-secondary" title="Clear filters">
+                    <i class="bi bi-x-circle"></i>
+                </a>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- Monitoring Logs Table -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-list-ul"></i> Auto-Captured Monitoring Data
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Status</th>
+                    <th>Site</th>
+                    <th>Confidence</th>
+                    <th>Total APs</th>
+                    <th>Online</th>
+                    <th>Offline</th>
+                    <th>Offline AP Names</th>
+                    <th>Excluded</th>
+                    <th>Escalation</th>
+                    <th>Checked</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr>
+                    <td>
+                        <span class="health-dot {{ log.status }}"></span>
+                        {{ log.status|capitalize }}
+                    </td>
+                    <td><strong>{{ log.site.name }}</strong></td>
+                    <td>
+                        <span class="badge bg-{{ 'success' if log.import_confidence == 'high' else 'warning' if log.import_confidence == 'medium' else 'secondary' }}">
+                            {{ log.import_confidence|capitalize }}
+                        </span>
+                        <small class="text-muted d-block">{{ log.import_basis }}</small>
+                        {% if 'offline_only' in (log.data_scope or '') %}
+                        <small class="text-info d-block">offline-only import</small>
+                        {% endif %}
+                        {% if log.status_note == 'offline_only_no_baseline' %}
+                        <small class="text-warning d-block">no baseline total yet</small>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">{{ log.total_aps }}</td>
+                    <td class="text-center text-success fw-bold">{{ log.total_aps - log.aps_offline }}</td>
+                    <td class="text-center">
+                        {% if log.aps_offline > 0 %}
+                        <span class="text-danger fw-bold">{{ log.aps_offline }}</span>
+                        {% else %}
+                        <span class="text-success">0</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if log.offline_ap_examples %}
+                        <div class="d-flex flex-wrap gap-1 mb-2">
+                            {% for ap_name in log.offline_ap_examples[:3] %}
+                            <span class="badge text-bg-light border">{{ ap_name }}</span>
+                            {% endfor %}
+                            {% if log.offline_ap_count > 3 %}
+                            <span class="badge text-bg-secondary">+{{ log.offline_ap_count - 3 }} more</span>
+                            {% endif %}
+                        </div>
+                        <div class="d-flex gap-1">
+                            <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#offlineApModal{{ log.id }}">
+                                <i class="bi bi-list-ul"></i> View All
+                            </button>
+                            <button type="button" class="btn btn-sm btn-outline-secondary copy-offline-btn" data-log-id="{{ log.id }}">
+                                <i class="bi bi-clipboard"></i> Copy
+                            </button>
+                        </div>
+                        <div class="mt-1">
+                            {% if log.new_offline_count > 0 %}
+                            <span class="badge bg-danger-subtle text-danger border border-danger-subtle">+{{ log.new_offline_count }} new</span>
+                            {% endif %}
+                            {% if log.restored_count > 0 %}
+                            <span class="badge bg-success-subtle text-success border border-success-subtle">{{ log.restored_count }} restored</span>
+                            {% endif %}
+                        </div>
+                        {% elif log.aps_offline > 0 %}
+                        <span class="text-muted small">Offline AP names not present in this import</span>
+                        {% else %}
+                        <span class="text-muted">-</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-center">
+                        {% if log.excluded_aps > 0 %}
+                        <span class="badge bg-info" title="{{ log.excluded_examples|join(', ') }}">{{ log.excluded_aps }}</span>
+                        {% else %}
+                        <span class="text-muted">0</span>
+                        {% endif %}
+                    </td>
+                    <td>
+                        {% if log.latest_escalation %}
+                        <div class="small mb-2">
+                            <span class="badge {{ 'bg-success' if log.latest_escalation.resolved_at else 'bg-danger' }}">
+                                {{ 'Resolved' if log.latest_escalation.resolved_at else 'Escalated' }}
+                            </span>
+                            <div class="text-muted mt-1">to {{ log.latest_escalation.escalated_to }}</div>
+                            <div class="text-muted">{{ log.latest_escalation.escalated_at.strftime('%Y-%m-%d %H:%M') }}</div>
+                        </div>
+                        {% if not log.latest_escalation.resolved_at %}
+                        <form method="POST" action="{{ url_for('resolve_monitoring_escalation', id=log.latest_escalation.id) }}">
+                            <input type="hidden" name="resolution_notes" value="Resolved from monitoring table">
+                            <button type="submit" class="btn btn-sm btn-outline-success">
+                                <i class="bi bi-check-circle"></i> Resolve
+                            </button>
+                        </form>
+                        {% endif %}
+                        {% else %}
+                        <form method="POST" action="{{ url_for('escalate_monitoring_issue', id=log.id) }}" class="d-grid gap-1">
+                            <select name="escalated_to" class="form-select form-select-sm" required>
+                                <option value="">Escalate to...</option>
+                                {% for target in escalation_targets %}
+                                <option value="{{ target }}">{{ target }}</option>
+                                {% endfor %}
+                            </select>
+                            <input type="text" name="escalation_reason" class="form-control form-control-sm" placeholder="Reason (optional)">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-exclamation-triangle"></i> Escalate
+                            </button>
+                        </form>
+                        {% endif %}
+                    </td>
+                    <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        {% if log.notes %}
+                        <span class="text-truncate d-inline-block" style="max-width: 200px;" title="{{ log.notes }}">
+                            {{ log.notes }}
+                        </span>
+                        {% else %}
+                        <a href="{{ url_for('add_monitoring_note', id=log.id) }}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-pencil"></i> Add Note
+                        </a>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="11" class="text-muted text-center">No monitoring data yet. Import Ruckus data to populate.</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% for log in logs %}
+{% if log.offline_ap_examples %}
+<div class="modal fade" id="offlineApModal{{ log.id }}" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Offline APs - {{ log.site.name }} ({{ log.offline_ap_count }})</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="d-flex justify-content-between align-items-center mb-3">
+                    <small class="text-muted">Latest check: {{ log.timestamp.strftime('%Y-%m-%d %H:%M') }}</small>
+                    <button type="button" class="btn btn-sm btn-outline-secondary copy-offline-btn" data-log-id="{{ log.id }}">
+                        <i class="bi bi-clipboard"></i> Copy AP List
+                    </button>
+                </div>
+                <textarea id="offlineApText{{ log.id }}" class="form-control d-none" rows="8">{{ log.offline_ap_text }}</textarea>
+                <div class="list-group">
+                    {% for ap_name in log.offline_ap_examples %}
+                    <div class="list-group-item py-2">{{ ap_name }}</div>
+                    {% endfor %}
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endfor %}
+
+<div class="card mt-4 bg-light">
+    <div class="card-body">
+        <h6><i class="bi bi-info-circle"></i> About Monitoring Data</h6>
+        <p class="mb-0">This table is <strong>automatically populated</strong> when you import Ruckus data. Each import creates a snapshot of your assigned sites' AP status. You can add notes to any entry to document observations or actions taken.</p>
+    </div>
+</div>
+
+<script>
+function copyOfflineApNames(logId) {
+    const el = document.getElementById(`offlineApText${logId}`);
+    if (!el) {
+        return;
+    }
+    navigator.clipboard.writeText(el.value || '').then(() => {
+        alert('Offline AP list copied to clipboard.');
+    }).catch(() => {
+        alert('Could not copy AP list. Please copy manually from the popup list.');
+    });
+}
+
+document.addEventListener('click', function (event) {
+    const button = event.target.closest('.copy-offline-btn');
+    if (!button) {
+        return;
+    }
+    const logId = button.getAttribute('data-log-id');
+    copyOfflineApNames(logId);
+});
+</script>
+{% endblock %}

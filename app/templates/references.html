@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+{% block title %}Reference Docs - VOD Report Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-folder2-open"></i> Reference Documents</h2>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-cloud-upload"></i> Upload New Reference
+    </div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('upload_reference') }}" enctype="multipart/form-data" class="row g-3">
+            <div class="col-md-4">
+                <label class="form-label">Title</label>
+                <input type="text" name="title" class="form-control" placeholder="Controller Access - Monday" required>
+            </div>
+            <div class="col-md-3">
+                <label class="form-label">Source</label>
+                <select name="source" class="form-select">
+                    <option value="monday.com">monday.com</option>
+                    <option value="manual">manual</option>
+                    <option value="ruckus">ruckus</option>
+                    <option value="other">other</option>
+                </select>
+            </div>
+            <div class="col-md-5">
+                <label class="form-label">File</label>
+                <input type="file" name="document" class="form-control" required>
+            </div>
+            <div class="col-12">
+                <label class="form-label">Notes (optional)</label>
+                <textarea name="notes" rows="2" class="form-control" placeholder="What this file is used for"></textarea>
+            </div>
+            <div class="col-12">
+                <button type="submit" class="btn btn-primary">
+                    <i class="bi bi-upload"></i> Upload Reference
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <i class="bi bi-list-ul"></i> Stored References
+    </div>
+    <div class="card-body p-0">
+        {% if docs %}
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Title</th>
+                    <th>Source</th>
+                    <th>File Name</th>
+                    <th>Uploaded</th>
+                    <th>Notes</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for doc in docs %}
+                <tr>
+                    <td>{{ doc.title }}</td>
+                    <td><span class="badge bg-info text-dark">{{ doc.source }}</span></td>
+                    <td>{{ doc.original_filename }}</td>
+                    <td>{{ doc.uploaded_at.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>{{ (doc.notes or '')[:80] }}{% if (doc.notes or '')|length > 80 %}...{% endif %}</td>
+                    <td class="text-end">
+                        <a href="{{ url_for('view_reference', id=doc.id) }}" class="btn btn-sm btn-outline-secondary">
+                            <i class="bi bi-table"></i> View
+                        </a>
+                        <a href="{{ url_for('download_reference', id=doc.id) }}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-download"></i> Download
+                        </a>
+                        <form method="POST" action="{{ url_for('delete_reference', id=doc.id) }}" class="d-inline" onsubmit="return confirm('Delete this reference document?');">
+                            <button type="submit" class="btn btn-sm btn-outline-danger">
+                                <i class="bi bi-trash"></i> Delete
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted p-3 mb-0">No reference documents uploaded yet.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

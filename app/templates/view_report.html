@@ -1,0 +1,236 @@
+{% extends 'base.html' %}
+{% block title %}Report: {{ report.agent.name }} - Week {{ report.week_ending }}{% endblock %}
+
+{% block content %}
+{% if is_pdf %}
+<style>
+@media print {
+    .no-print {
+        display: none !important;
+    }
+    .card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+    }
+}
+</style>
+<script>
+window.addEventListener('load', function () {
+    window.print();
+});
+</script>
+{% endif %}
+
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+        <h2><i class="bi bi-file-earmark-text"></i> Weekly Report</h2>
+        <p class="text-muted mb-0">{{ report.agent.name }} - Week Ending {{ report.week_ending }}</p>
+    </div>
+    <div>
+        {% if report.submitted_at %}
+        <span class="badge bg-success fs-6">Submitted {{ report.submitted_at.strftime('%Y-%m-%d %H:%M') }}</span>
+        {% else %}
+        <span class="badge bg-warning fs-6">Draft</span>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-2">
+        <div class="card stat-card">
+            <div class="number">{{ report.sites_visited }}</div>
+            <div class="label">Sites Visited</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card stat-card info">
+            <div class="number">{{ report.sites_monitored }}</div>
+            <div class="label">Sites Monitored</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card stat-card {{ 'warning' if report.aps_offline_total > 0 else 'success' }}">
+            <div class="number">{{ report.aps_offline_total }}</div>
+            <div class="label">APs Offline</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card stat-card">
+            <div class="number">{{ report.critical_incidents or 0 }}</div>
+            <div class="label">Critical Incidents</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card stat-card">
+            <div class="number">{{ report.tickets_handled }}</div>
+            <div class="label">Tickets Handled</div>
+        </div>
+    </div>
+    <div class="col-md-2">
+        <div class="card stat-card success">
+            <div class="number">{{ report.tickets_closed }}</div>
+            <div class="label">Tickets Closed</div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-geo-alt"></i> Site Visits
+            </div>
+            <div class="card-body">
+                {% if visits %}
+                <table class="table table-sm">
+                    <thead>
+                        <tr><th>Date</th><th>Site</th><th>Discussion</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for visit in visits %}
+                        <tr>
+                            <td>{{ visit.date }}</td>
+                            <td>{{ visit.site_name }}</td>
+                            <td>{{ (visit.discussion_topics or '')[:60] }}{% if (visit.discussion_topics or '') | length > 60 %}...{% endif %}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">No site visits this week.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-wifi"></i> Monitoring Logs
+            </div>
+            <div class="card-body">
+                {% if logs %}
+                <table class="table table-sm">
+                    <thead>
+                        <tr><th>Date</th><th>Site</th><th>APs</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for log in logs %}
+                        <tr>
+                            <td>{{ log.timestamp.strftime('%Y-%m-%d') }}</td>
+                            <td>{{ log.site.name if log.site else '-' }}</td>
+                            <td>{{ log.aps_offline }}/{{ log.total_aps }}</td>
+                            <td><span class="badge bg-{{ 'success' if log.status == 'healthy' else ('danger' if log.status == 'critical' else 'warning') }}">{{ log.status }}</span></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">No monitoring logs this week.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="card mt-4">
+    <div class="card-header">
+        <i class="bi bi-headset"></i> Service Calls
+    </div>
+    <div class="card-body">
+        {% if calls %}
+        <table class="table table-sm">
+            <thead>
+                <tr><th>Date</th><th>Ticket</th><th>Summary</th><th>Status</th></tr>
+            </thead>
+            <tbody>
+                {% for call in calls %}
+                <tr>
+                    <td>{{ call.date }}</td>
+                    <td><code>{{ call.ticket_number or '-' }}</code></td>
+                    <td>{{ (call.summary or '')[:50] }}{% if (call.summary or '')|length > 50 %}...{% endif %}</td>
+                    <td><span class="badge bg-{{ 'success' if call.status == 'closed' else ('danger' if call.status == 'escalated' else 'warning') }}">{{ call.status }}</span></td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted mb-0">No service calls this week.</p>
+        {% endif %}
+    </div>
+</div>
+
+{% if week_holidays %}
+<div class="card mt-4">
+    <div class="card-header">
+        <i class="bi bi-calendar-event"></i> Public Holidays This Week
+    </div>
+    <div class="card-body">
+        <div class="d-flex flex-wrap gap-2">
+            {% for holiday in week_holidays %}
+            <span class="badge text-bg-danger">{{ holiday.date.strftime('%Y-%m-%d') }} - {{ holiday.name }}</span>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% if not report.submitted_at %}
+<div class="card mt-4">
+    <div class="card-header">
+        <i class="bi bi-pencil"></i> Finalize Report
+    </div>
+    <div class="card-body">
+        <form method="POST" action="{{ url_for('submit_report', id=report.id) }}">
+            <div class="row">
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Tickets Handled (Override)</label>
+                    <input type="number" name="tickets_handled_override" class="form-control" min="0" value="{{ report.tickets_handled }}">
+                    <small class="text-muted">Leave unchanged to keep auto total.</small>
+                </div>
+                <div class="col-md-6 mb-3">
+                    <label class="form-label">Tickets Closed (Override)</label>
+                    <input type="number" name="tickets_closed_override" class="form-control" min="0" value="{{ report.tickets_closed }}">
+                    <small class="text-muted">Use for manual correction before submit.</small>
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Achievements This Week</label>
+                <textarea name="achievements" class="form-control" rows="2">{{ report.achievements or '' }}</textarea>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Challenges Encountered</label>
+                <textarea name="challenges" class="form-control" rows="2">{{ report.challenges or '' }}</textarea>
+            </div>
+            <div class="mb-3">
+                <label class="form-label">Additional Notes</label>
+                <textarea name="notes" class="form-control" rows="2">{{ report.notes or '' }}</textarea>
+            </div>
+            <button type="submit" class="btn btn-success">
+                <i class="bi bi-check-lg"></i> Submit Report
+            </button>
+        </form>
+    </div>
+</div>
+{% else %}
+<div class="card mt-4">
+    <div class="card-header">
+        <i class="bi bi-chat-quote"></i> Notes
+    </div>
+    <div class="card-body">
+        <p><strong>Achievements:</strong> {{ report.achievements or 'None noted' }}</p>
+        <p><strong>Challenges:</strong> {{ report.challenges or 'None noted' }}</p>
+        <p class="mb-0"><strong>Notes:</strong> {{ report.notes or 'None' }}</p>
+    </div>
+</div>
+{% endif %}
+
+<div class="mt-4 no-print">
+    <a href="{{ url_for('export_report_pdf', id=report.id) }}" class="btn btn-primary me-2" target="_blank" rel="noopener">
+        <i class="bi bi-file-earmark-pdf"></i> Export PDF
+    </a>
+    <a href="{{ url_for('reports') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Reports
+    </a>
+</div>
+{% endblock %}

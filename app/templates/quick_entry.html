@@ -1,0 +1,128 @@
+{% extends 'base.html' %}
+{% block title %}Quick Entry - Report Tracker{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-lightning"></i> Quick Daily Entry</h2>
+
+<form method="POST">
+    <div class="row">
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-person"></i> Basic Info
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Support Engineer</label>
+                        <select name="agent_id" class="form-select" required>
+                            <option value="">Select Agent...</option>
+                            {% for agent in agents %}
+                            <option value="{{ agent.id }}">{{ agent.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Date</label>
+                        <input type="date" name="date" class="form-control" value="{{ today }}" required>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-geo-alt"></i> Site Visit (Optional)
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Site Visited</label>
+                        <input type="text" name="site_visited" class="form-control" placeholder="Leave blank if no site visit">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Visit Notes</label>
+                        <textarea name="visit_notes" class="form-control" rows="2" placeholder="What was discussed?"></textarea>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="col-md-6">
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-wifi"></i> Ruckus Monitoring (Optional)
+                </div>
+                <div class="card-body">
+                    <div class="mb-3">
+                        <label class="form-label">Site Monitored</label>
+                        <input type="text" name="site_monitored" class="form-control" placeholder="Site name from Ruckus">
+                    </div>
+                    <div class="row">
+                        <div class="col-6">
+                            <div class="mb-3">
+                                <label class="form-label">APs Offline</label>
+                                <input type="number" name="aps_offline" class="form-control" value="0" min="0">
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="mb-3">
+                                <label class="form-label">Total APs</label>
+                                <input type="number" name="aps_total" class="form-control" value="0" min="0">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <div class="form-check">
+                            <input type="checkbox" name="network_issues" class="form-check-input" id="network_issues">
+                            <label class="form-check-label" for="network_issues">Network Connectivity Issues</label>
+                        </div>
+                        <div class="form-check">
+                            <input type="checkbox" name="site_migration" class="form-check-input" id="site_migration">
+                            <label class="form-check-label" for="site_migration">Site Migration</label>
+                        </div>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Resolution Status</label>
+                        <select name="resolution_status" class="form-select">
+                            <option value="resolved">Resolved</option>
+                            <option value="pending">Pending</option>
+                            <option value="escalated">Escalated</option>
+                        </select>
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Monitoring Notes</label>
+                        <textarea name="monitoring_notes" class="form-control" rows="2"></textarea>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="card">
+                <div class="card-header">
+                    <i class="bi bi-headset"></i> Service Calls / Tickets
+                </div>
+                <div class="card-body">
+                    <div class="row">
+                        <div class="col-6">
+                            <div class="mb-3">
+                                <label class="form-label">Tickets Handled</label>
+                                <input type="number" name="tickets_handled" class="form-control" value="0" min="0">
+                            </div>
+                        </div>
+                        <div class="col-6">
+                            <div class="mb-3">
+                                <label class="form-label">Tickets Closed</label>
+                                <input type="number" name="tickets_closed" class="form-control" value="0" min="0">
+                            </div>
+                        </div>
+                    </div>
+                    <small class="text-muted">Enter counts from Freshdesk or manual tracking</small>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="text-center mt-4">
+        <button type="submit" class="btn btn-primary btn-lg">
+            <i class="bi bi-save"></i> Save Daily Entry
+        </button>
+    </div>
+</form>
+{% endblock %}

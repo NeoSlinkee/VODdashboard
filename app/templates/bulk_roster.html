@@ -1,0 +1,85 @@
+{% extends 'base.html' %}
+{% block title %}Bulk Roster - {{ month_name }} {{ year }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h2><i class="bi bi-table"></i> Bulk Roster — {{ month_name }} {{ year }}</h2>
+    <a href="{{ url_for('duty_roster', year=year, month=month) }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back to Calendar
+    </a>
+</div>
+
+<div class="card mb-3">
+    <div class="card-body py-2 d-flex align-items-center gap-3 flex-wrap">
+        <span class="text-muted" style="font-size:0.85rem;font-weight:600;">Assign month / go to:</span>
+        <form method="get" class="d-flex gap-2 align-items-center">
+            <select name="month" class="form-select form-select-sm" style="width:auto;">
+                {% for num, name in month_names.items() %}
+                <option value="{{ num }}" {% if num == month %}selected{% endif %}>{{ name }}</option>
+                {% endfor %}
+            </select>
+            <input type="number" name="year" value="{{ year }}" class="form-control form-control-sm" style="width:85px;">
+            <button type="submit" class="btn btn-sm btn-outline-primary">Go</button>
+        </form>
+    </div>
+</div>
+
+<form method="post">
+    <input type="hidden" name="year" value="{{ year }}">
+    <input type="hidden" name="month" value="{{ month }}">
+
+    <div class="card">
+        <div class="card-body p-0">
+            <table class="table table-sm table-hover mb-0">
+                <thead>
+                    <tr>
+                        <th style="width:60px;">#</th>
+                        <th style="width:120px;">Date</th>
+                        <th style="width:90px;">Day</th>
+                        <th>Night Standby Engineer</th>
+                    </tr>
+                </thead>
+                <tbody>
+                {% for d in days %}
+                <tr>
+                    <td class="text-muted">{{ d.day_num }}</td>
+                    <td>{{ d.date.strftime('%Y-%m-%d') }}</td>
+                    <td>{{ d.date.strftime('%A') }}</td>
+                    <td>
+                        <div class="d-flex gap-3 flex-wrap">
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio"
+                                       name="day_{{ d.day_num }}" id="d{{ d.day_num }}_none"
+                                       value="" {% if not d.entry %}checked{% endif %}>
+                                <label class="form-check-label text-muted" for="d{{ d.day_num }}_none">—</label>
+                            </div>
+                            {% for name, info in engineers.items() %}
+                            <div class="form-check">
+                                <input class="form-check-input" type="radio"
+                                       name="day_{{ d.day_num }}" id="d{{ d.day_num }}_{{ name }}"
+                                       value="{{ name }}"
+                                       {% if d.entry and d.entry.agent_name == name %}checked{% endif %}>
+                                <label class="form-check-label" for="d{{ d.day_num }}_{{ name }}">
+                                    <span class="badge" style="background:{{ info.color }};color:{{ info.text }};padding:3px 10px;">
+                                        {{ name }}
+                                    </span>
+                                </label>
+                            </div>
+                            {% endfor %}
+                        </div>
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="mt-3 d-flex gap-2">
+        <button type="submit" class="btn btn-primary">
+            <i class="bi bi-save"></i> Save All
+        </button>
+        <a href="{{ url_for('duty_roster', year=year, month=month) }}" class="btn btn-outline-secondary">Cancel</a>
+    </div>
+</form>
+{% endblock %}

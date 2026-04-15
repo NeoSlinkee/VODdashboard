@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% block title %}Import Sites - VOD Report Tracker{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-upload"></i> Bulk Import Sites</h2>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                Paste JSON Site List
+            </div>
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Sites JSON</label>
+                        <textarea name="sites_json" class="form-control font-monospace" rows="15" placeholder='Paste your JSON here...'>{
+  "within_reach": [
+    "Piazza Montecasino",
+    "Garden Court Morningside Sandton",
+    "Palazzo Montecasino"
+  ],
+  "far_reach": [
+    "Stay Easy Pietermaritzburg",
+    "GC South Beach (Durban)"
+  ]
+}</textarea>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-upload"></i> Import Sites
+                        </button>
+                        <a href="{{ url_for('sites') }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6><i class="bi bi-info-circle"></i> JSON Format</h6>
+                <p>Use this structure:</p>
+                <pre class="bg-dark text-light p-2 rounded"><code>{
+  "within_reach": [
+    "Site Name 1",
+    "Site Name 2"
+  ],
+  "far_reach": [
+    "Site Name 3"
+  ]
+}</code></pre>
+                <p class="mb-0"><small>Duplicate sites will be skipped. Site names should match Ruckus zone names for auto-matching.</small></p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

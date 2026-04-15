@@ -1,0 +1,141 @@
+{% extends 'base.html' %}
+{% block title %}Import Ruckus Data - VOD Report Tracker{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-cloud-upload"></i> Import Ruckus Data</h2>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-file-earmark-arrow-up"></i> Upload Ruckus Export
+            </div>
+            <div class="card-body">
+                <form method="POST" enctype="multipart/form-data">
+                    <!-- File Upload -->
+                    <div class="mb-4">
+                        <label class="form-label">Select File (CSV or JSON)</label>
+                        <input type="file" name="ruckus_file" class="form-control" accept=".csv,.json" required>
+                        <small class="text-muted">Export from Ruckus controller: AP Status report in CSV or JSON format</small>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Import Source</label>
+                        <select name="source" class="form-select">
+                            <option value="ruckus_manual">Manual Upload</option>
+                            <option value="ruckus_scheduled">Scheduled Import</option>
+                        </select>
+                    </div>
+
+                    <div class="form-check mb-3">
+                        <input class="form-check-input" type="checkbox" value="1" id="offline_only" name="offline_only" checked>
+                        <label class="form-check-label" for="offline_only">
+                            This file is an Offline APs only export
+                        </label>
+                        <div class="form-text">
+                            Keep this checked for your usual offline export. Uncheck only when importing full AP inventory.
+                        </div>
+                    </div>
+                    
+                    <button type="submit" class="btn btn-primary btn-lg">
+                        <i class="bi bi-cloud-upload"></i> Import Data
+                    </button>
+                </form>
+            </div>
+        </div>
+        
+        <!-- Clear Data -->
+        <div class="card mt-4 border-danger">
+            <div class="card-header text-danger">
+                <i class="bi bi-trash"></i> Clear Ruckus Data
+            </div>
+            <div class="card-body">
+                <p class="text-muted mb-3">Deletes all monitoring logs and import history. Use this when data looks wrong and you want a clean start.</p>
+                <form method="POST" action="{{ url_for('clear_ruckus_data') }}" onsubmit="return confirm('Delete all monitoring logs and Ruckus import history? This cannot be undone.')">
+                    <button type="submit" class="btn btn-outline-danger">
+                        <i class="bi bi-trash"></i> Clear All Ruckus Data
+                    </button>
+                </form>
+            </div>
+        </div>
+
+        <!-- Recent Imports -->
+        <div class="card mt-4">
+            <div class="card-header">
+                <i class="bi bi-clock-history"></i> Recent Imports
+            </div>
+            <div class="card-body p-0">
+                <table class="table table-hover mb-0">
+                    <thead>
+                        <tr>
+                            <th>Date</th>
+                            <th>Source</th>
+                            <th>Records</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for log in recent_imports %}
+                        <tr>
+                            <td>{{ log.timestamp.strftime('%Y-%m-%d %H:%M') if log.timestamp else 'N/A' }}</td>
+                            <td>{{ log.source }}</td>
+                            <td>{{ log.records_matched }}/{{ log.records_processed }}</td>
+                            <td>
+                                {% if log.status == 'success' %}
+                                <span class="badge bg-success">Success</span>
+                                {% else %}
+                                <span class="badge bg-danger">{{ log.status }}</span>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" class="text-muted text-center">No imports yet</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6><i class="bi bi-info-circle"></i> How It Works</h6>
+                <ol class="mb-0">
+                    <li>Export Offline APs list from Ruckus controller</li>
+                    <li>Upload the CSV or JSON file here</li>
+                    <li>System filters to your assigned sites only</li>
+                    <li>System reuses known site totals when possible</li>
+                    <li>Newly offline APs are tracked against previous import</li>
+                    <li>View results on the Health dashboard</li>
+                </ol>
+            </div>
+        </div>
+        
+        <div class="card mt-3 bg-light">
+            <div class="card-body">
+                <h6><i class="bi bi-file-earmark-spreadsheet"></i> Expected CSV Format</h6>
+                <pre class="bg-dark text-light p-2 rounded small mb-0"><code>Zone Name,AP Name,Status
+Site A,AP-001,Online
+Site A,AP-002,Offline
+Site B,AP-003,Online</code></pre>
+            </div>
+        </div>
+        
+        <div class="card mt-3 bg-light">
+            <div class="card-body">
+                <h6><i class="bi bi-braces"></i> Expected JSON Format</h6>
+                <pre class="bg-dark text-light p-2 rounded small mb-0"><code>[
+  {
+    "zoneName": "Site A",
+    "apName": "AP-001",
+    "status": "Online"
+  }
+]</code></pre>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

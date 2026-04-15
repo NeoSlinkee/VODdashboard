@@ -1,0 +1,259 @@
+{% extends 'base.html' %}
+{% block title %}Dashboard - VOD Report Tracker{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-speedometer2"></i> Dashboard</h2>
+
+<!-- Health Overview Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card success">
+            <div class="number">{{ health_summary.healthy }}</div>
+            <div class="label"><span class="health-dot healthy"></span>Healthy Sites</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card" style="color: #f39c12;">
+            <div class="number" style="color: #f39c12;">{{ health_summary.warning }}</div>
+            <div class="label"><span class="health-dot warning"></span>Warning</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card warning">
+            <div class="number">{{ health_summary.critical }}</div>
+            <div class="label"><span class="health-dot critical"></span>Critical</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="number">{{ total_tickets_today }}</div>
+            <div class="label"><i class="bi bi-ticket"></i> Tickets Today</div>
+        </div>
+    </div>
+</div>
+
+<!-- Quick Actions -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <a href="{{ url_for('import_ruckus') }}" class="quick-action">
+            <i class="bi bi-cloud-upload-fill"></i>
+            <div>Import Ruckus Data</div>
+            <small class="text-muted">Upload CSV/JSON</small>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a href="{{ url_for('add_site_visit') }}" class="quick-action">
+            <i class="bi bi-geo-alt-fill"></i>
+            <div>Log Site Visit</div>
+            <small class="text-muted">Manual entry</small>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a href="{{ url_for('add_tickets') }}" class="quick-action">
+            <i class="bi bi-ticket-fill"></i>
+            <div>Add Tickets</div>
+            <small class="text-muted">Freshdesk stats</small>
+        </a>
+    </div>
+    <div class="col-md-3">
+        <a href="{{ url_for('generate_report') }}" class="quick-action">
+            <i class="bi bi-file-earmark-plus-fill"></i>
+            <div>Generate Reports</div>
+            <small class="text-muted">Week ending {{ week_ending }}</small>
+        </a>
+    </div>
+</div>
+
+<div class="row">
+    <!-- Sites Needing Attention -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-exclamation-triangle"></i> Sites Needing Attention</span>
+                <a href="{{ url_for('site_health') }}" class="btn btn-sm btn-outline-primary">View All</a>
+            </div>
+            <div class="card-body">
+                {% if attention_sites %}
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr><th>Site</th><th>APs</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for s in attention_sites[:5] %}
+                        <tr>
+                            <td>
+                                <span class="health-dot {{ s.status }}"></span>
+                                {{ s.site.name }}
+                            </td>
+                            <td>
+                                <span class="text-danger">{{ s.aps_offline }}</span> / {{ s.total_aps }}
+                            </td>
+                            <td>
+                                <span class="badge bg-{{ 'danger' if s.status == 'critical' else 'warning' }}">
+                                    {{ s.status|capitalize }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-success mb-0"><i class="bi bi-check-circle"></i> All sites healthy!</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+    
+    <!-- Recent Imports -->
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-clock-history"></i> Recent Data Imports
+            </div>
+            <div class="card-body">
+                {% if recent_imports %}
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr><th>Source</th><th>Time</th><th>Matched</th><th>Status</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for imp in recent_imports %}
+                        <tr>
+                            <td><i class="bi bi-{{ 'wifi' if imp.source == 'ruckus' else 'ticket' }}"></i> {{ imp.source|capitalize }}</td>
+                            <td>{{ imp.timestamp.strftime('%m/%d %H:%M') }}</td>
+                            <td>{{ imp.records_matched }}/{{ imp.records_processed }}</td>
+                            <td>
+                                <span class="badge bg-{{ 'success' if imp.status == 'success' else 'warning' }}">
+                                    {{ imp.status }}
+                                </span>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">No imports yet. <a href="{{ url_for('import_ruckus') }}">Import Ruckus data</a></p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Data Source Quality -->
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-shield-check"></i> Data Source Quality</span>
+                {% if data_quality.last_import %}
+                <small class="text-muted">Last updated {{ data_quality.last_import.strftime('%Y-%m-%d %H:%M') }}</small>
+                {% endif %}
+            </div>
+            <div class="card-body">
+                <div class="row g-3 mb-3">
+                    <div class="col-6">
+                        <div class="border rounded p-2">
+                            <small class="text-muted d-block">Import Status</small>
+                            <span class="badge bg-{{ 'success' if data_quality.import_status == 'success' else 'warning' if data_quality.import_status == 'partial' else 'secondary' }}">
+                                {{ data_quality.import_status|replace('_', ' ')|capitalize }}
+                            </span>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-2">
+                            <small class="text-muted d-block">Matched vs Processed</small>
+                            <strong>{{ data_quality.matched }}/{{ data_quality.processed }}</strong>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-2">
+                            <small class="text-muted d-block">Unmatched Zones</small>
+                            <strong class="{{ 'text-danger' if data_quality.unmatched > 0 else 'text-success' }}">{{ data_quality.unmatched }}</strong>
+                        </div>
+                    </div>
+                    <div class="col-6">
+                        <div class="border rounded p-2">
+                            <small class="text-muted d-block">Excluded Maintenance APs</small>
+                            <strong>{{ data_quality.total_excluded_aps }}</strong>
+                        </div>
+                    </div>
+                </div>
+                <div>
+                    <small class="text-muted d-block mb-1">Confidence Mix</small>
+                    <span class="badge bg-success me-1">High {{ data_quality.confidence_counts.high }}</span>
+                    <span class="badge bg-warning text-dark me-1">Medium {{ data_quality.confidence_counts.medium }}</span>
+                    <span class="badge bg-secondary">Low {{ data_quality.confidence_counts.low }}</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-tools"></i> Known Maintenance APs</span>
+                <small class="text-muted">Excluded from scoring</small>
+            </div>
+            <div class="card-body">
+                {% if maintenance_sites %}
+                <table class="table table-sm mb-0">
+                    <thead>
+                        <tr><th>Site</th><th>Excluded</th><th>Examples</th></tr>
+                    </thead>
+                    <tbody>
+                        {% for item in maintenance_sites[:8] %}
+                        <tr>
+                            <td>{{ item.site }}</td>
+                            <td><span class="badge bg-info">{{ item.excluded_aps }}</span></td>
+                            <td>
+                                {% if item.examples %}
+                                <small class="text-muted">{{ item.examples|join(', ') }}</small>
+                                {% else %}
+                                <small class="text-muted">No sample names</small>
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+                {% else %}
+                <p class="text-muted mb-0">No maintenance APs detected in recent imports.</p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Agents Section -->
+<div class="row mt-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-people"></i> Support Engineers</span>
+                <a href="{{ url_for('agents') }}" class="btn btn-sm btn-outline-secondary">Manage</a>
+            </div>
+            <div class="card-body">
+                {% if agents %}
+                <div class="row">
+                    {% for agent in agents %}
+                    <div class="col-md-4 mb-3">
+                        <div class="card h-100">
+                            <div class="card-body">
+                                <h6 class="card-title">{{ agent.name }}</h6>
+                                {% if agent.email %}<small class="text-muted">{{ agent.email }}</small>{% endif %}
+                                {% if agent.freshdesk_agent_id %}
+                                <br><span class="badge bg-info">Freshdesk linked</span>
+                                {% endif %}
+                            </div>
+                        </div>
+                    </div>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <p class="text-muted mb-0">No agents configured. <a href="{{ url_for('add_agent') }}">Add agents</a></p>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

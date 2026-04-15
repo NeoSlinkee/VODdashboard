@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{% block title %}Report Tracker{% endblock %}</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
+    <style>
+        :root {
+            --primary-color: #2c3e50;
+            --accent-color: #3498db;
+        }
+        body {
+            background-color: #f8f9fa;
+        }
+        .navbar {
+            background: linear-gradient(135deg, var(--primary-color), #34495e);
+        }
+        .sidebar {
+            background: white;
+            min-height: calc(100vh - 56px);
+            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+        }
+        .sidebar .nav-link {
+            color: #555;
+            padding: 12px 20px;
+            border-left: 3px solid transparent;
+        }
+        .sidebar .nav-link:hover {
+            background: #f8f9fa;
+            border-left-color: var(--accent-color);
+        }
+        .sidebar .nav-link.active {
+            background: #e8f4fc;
+            border-left-color: var(--accent-color);
+            color: var(--accent-color);
+        }
+        .sidebar .nav-link i {
+            margin-right: 10px;
+            width: 20px;
+        }
+        .content {
+            padding: 25px;
+        }
+        .card {
+            border: none;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            margin-bottom: 20px;
+        }
+        .card-header {
+            background: white;
+            border-bottom: 2px solid #f0f0f0;
+            font-weight: 600;
+        }
+        .stat-card {
+            text-align: center;
+            padding: 20px;
+        }
+        .stat-card .number {
+            font-size: 2.5rem;
+            font-weight: 700;
+            color: var(--primary-color);
+        }
+        .stat-card .label {
+            color: #888;
+            font-size: 0.9rem;
+        }
+        .stat-card.warning .number { color: #e74c3c; }
+        .stat-card.success .number { color: #27ae60; }
+        .stat-card.info .number { color: #3498db; }
+        .status-healthy { color: #27ae60; }
+        .status-warning { color: #f39c12; }
+        .status-critical { color: #e74c3c; }
+        .status-unknown { color: #95a5a6; }
+        .bg-healthy { background-color: #27ae60 !important; }
+        .bg-warning-custom { background-color: #f39c12 !important; }
+        .bg-critical { background-color: #e74c3c !important; }
+        .bg-unknown { background-color: #95a5a6 !important; }
+        .health-card {
+            border-left: 4px solid;
+            transition: all 0.2s;
+        }
+        .health-card.healthy { border-left-color: #27ae60; }
+        .health-card.warning { border-left-color: #f39c12; }
+        .health-card.critical { border-left-color: #e74c3c; }
+        .health-card.unknown { border-left-color: #95a5a6; }
+        .health-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 8px;
+        }
+        .health-dot.healthy { background: #27ae60; }
+        .health-dot.warning { background: #f39c12; }
+        .health-dot.critical { background: #e74c3c; animation: pulse 1s infinite; }
+        .health-dot.unknown { background: #95a5a6; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+        .btn-primary {
+            background: var(--accent-color);
+            border-color: var(--accent-color);
+        }
+        .table th {
+            background: #f8f9fa;
+            font-weight: 600;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            color: #666;
+        }
+        .badge-status {
+            padding: 5px 10px;
+            border-radius: 20px;
+            font-size: 0.75rem;
+        }
+        .quick-action {
+            padding: 15px;
+            border-radius: 10px;
+            text-align: center;
+            background: white;
+            transition: all 0.2s;
+            text-decoration: none;
+            color: inherit;
+            display: block;
+        }
+        .quick-action:hover {
+            transform: translateY(-3px);
+            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+        }
+        .quick-action i {
+            font-size: 2rem;
+            color: var(--accent-color);
+            margin-bottom: 10px;
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="{{ url_for('index') }}">
+                <i class="bi bi-clipboard-data"></i> Report Tracker
+            </a>
+            <div class="navbar-nav ms-auto">
+                <span class="navbar-text">
+                    <i class="bi bi-calendar3"></i> Week Ending: {{ week_ending if week_ending else 'N/A' }}
+                </span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-md-2 sidebar p-0">
+                <nav class="nav flex-column pt-3">
+                    <a class="nav-link {{ 'active' if request.endpoint == 'index' else '' }}" href="{{ url_for('index') }}">
+                        <i class="bi bi-speedometer2"></i> Dashboard
+                    </a>
+                    <a class="nav-link {{ 'active' if request.endpoint == 'site_health' else '' }}" href="{{ url_for('site_health') }}">
+                        <i class="bi bi-heart-pulse"></i> Site Health
+                    </a>
+                    <hr class="mx-3">
+                    <small class="px-3 text-muted">DATA IMPORT</small>
+                    <a class="nav-link {{ 'active' if 'import_ruckus' in request.endpoint else '' }}" href="{{ url_for('import_ruckus') }}">
+                        <i class="bi bi-cloud-upload"></i> Import Ruckus
+                    </a>
+                    <a class="nav-link {{ 'active' if 'ticket' in request.endpoint else '' }}" href="{{ url_for('tickets') }}">
+                        <i class="bi bi-ticket"></i> Tickets
+                    </a>
+                    <hr class="mx-3">
+                    <small class="px-3 text-muted">MANUAL ENTRY</small>
+                    <a class="nav-link {{ 'active' if request.endpoint in ('site_visits', 'add_site_visit') else '' }}" href="{{ url_for('site_visits') }}">
+                        <i class="bi bi-geo-alt"></i> Site Visits
+                    </a>
+                    <a class="nav-link {{ 'active' if request.endpoint in ('service_calls', 'add_service_call', 'bulk_service_calls') else '' }}" href="{{ url_for('service_calls') }}">
+                        <i class="bi bi-headset"></i> Service Calls
+                    </a>
+                    <a class="nav-link {{ 'active' if 'monitoring' in request.endpoint else '' }}" href="{{ url_for('monitoring') }}">
+                        <i class="bi bi-wifi"></i> Monitoring
+                    </a>
+                    <hr class="mx-3">
+                    <small class="px-3 text-muted">REPORTS</small>
+                    <a class="nav-link {{ 'active' if request.endpoint == 'reports' or 'report' in request.endpoint else '' }}" href="{{ url_for('reports') }}">
+                        <i class="bi bi-file-earmark-text"></i> Weekly Reports
+                    </a>
+                    <a class="nav-link {{ 'active' if 'summary' in request.endpoint else '' }}" href="{{ url_for('weekly_summary') }}">
+                        <i class="bi bi-bar-chart"></i> Company Summary
+                    </a>
+                    <hr class="mx-3">
+                    <small class="px-3 text-muted">ROSTER & CLAIMS</small>
+                    <a class="nav-link {{ 'active' if 'roster' in request.endpoint else '' }}" href="{{ url_for('duty_roster') }}">
+                        <i class="bi bi-calendar3"></i> Duty Roster
+                    </a>
+                    <a class="nav-link {{ 'active' if 'leave_request' in request.endpoint or request.endpoint == 'leave_requests' else '' }}" href="{{ url_for('leave_requests') }}">
+                        <i class="bi bi-person-workspace"></i> Leave Management
+                    </a>
+                    <a class="nav-link {{ 'active' if 'standby_claim' in request.endpoint else '' }}" href="{{ url_for('standby_claims') }}">
+                        <i class="bi bi-file-earmark-ruled"></i> Standby Claims
+                    </a>
+                    <hr class="mx-3">
+                    <small class="px-3 text-muted">SETTINGS</small>
+                    <a class="nav-link {{ 'active' if request.endpoint in ('sites', 'add_site', 'import_sites') else '' }}" href="{{ url_for('sites') }}">
+                        <i class="bi bi-building"></i> My Sites
+                    </a>
+                    <a class="nav-link {{ 'active' if 'agent' in request.endpoint else '' }}" href="{{ url_for('agents') }}">
+                        <i class="bi bi-people"></i> Agents
+                    </a>
+                    <a class="nav-link {{ 'active' if 'settings' in request.endpoint else '' }}" href="{{ url_for('settings') }}">
+                        <i class="bi bi-gear"></i> Settings
+                    </a>
+                    <a class="nav-link {{ 'active' if 'reference' in request.endpoint else '' }}" href="{{ url_for('references') }}">
+                        <i class="bi bi-folder2-open"></i> Reference Docs
+                    </a>
+                </nav>
+            </div>
+            <div class="col-md-10 content">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'success' if category == 'success' else 'info' if category == 'info' else 'warning' }} alert-dismissible fade show">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+                
+                {% block content %}{% endblock %}
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

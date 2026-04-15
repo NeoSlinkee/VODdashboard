@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block title %}Add Site Visit - Report Tracker{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-geo-alt"></i> Log Site Visit</h2>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Support Engineer *</label>
+                                <select name="agent_id" class="form-select" required>
+                                    <option value="">Select Agent...</option>
+                                    {% for agent in agents %}
+                                    <option value="{{ agent.id }}">{{ agent.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Date *</label>
+                                <input type="date" name="date" class="form-control" value="{{ today }}" required>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Site *</label>
+                                <select name="site_id" class="form-select" id="siteSelect" onchange="handleSiteSelect(this)" required>
+                                    <option value="">-- Select a site --</option>
+                                    {% for site in sites %}
+                                    <option value="{{ site.id }}">{{ site.name }}</option>
+                                    {% endfor %}
+                                    <option value="other">Other (type below)</option>
+                                </select>
+                            </div>
+                            <div class="mb-3" id="customSiteDiv" style="display:none">
+                                <label class="form-label">Custom Site Name *</label>
+                                <input type="text" name="site_name" id="siteNameInput" class="form-control" placeholder="Enter site name">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Location / Area</label>
+                                <input type="text" name="location" class="form-control" placeholder="e.g. Main reception, Server room">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Discussion Topics</label>
+                        <textarea name="discussion_topics" class="form-control" rows="3" placeholder="What was discussed during the visit?"></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Information Obtained</label>
+                        <textarea name="info_obtained" class="form-control" rows="3" placeholder="Key information gathered..."></textarea>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label">Follow-up Actions</label>
+                        <textarea name="follow_up_actions" class="form-control" rows="2" placeholder="Action items from this visit..."></textarea>
+                    </div>
+
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> Save Visit
+                        </button>
+                        <a href="{{ url_for('site_visits') }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function handleSiteSelect(sel) {
+    var customDiv = document.getElementById('customSiteDiv');
+    var customInput = document.getElementById('siteNameInput');
+    if (sel.value === 'other') {
+        customDiv.style.display = 'block';
+        customInput.required = true;
+    } else {
+        customDiv.style.display = 'none';
+        customInput.required = false;
+        customInput.value = '';
+    }
+}
+</script>
+{% endblock %}

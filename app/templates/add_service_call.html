@@ -1,0 +1,77 @@
+{% extends 'base.html' %}
+{% block title %}Add Service Call - Report Tracker{% endblock %}
+
+{% block content %}
+<h2 class="mb-4"><i class="bi bi-headset"></i> Log Service Call</h2>
+
+<div class="row">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Support Engineer *</label>
+                                <select name="agent_id" class="form-select" required>
+                                    <option value="">Select Agent...</option>
+                                    {% for agent in agents %}
+                                    <option value="{{ agent.id }}">{{ agent.name }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Date *</label>
+                                <input type="date" name="date" class="form-control" value="{{ today }}" required>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="row">
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Ticket Number</label>
+                                <input type="text" name="ticket_number" class="form-control" placeholder="FD-1234">
+                            </div>
+                        </div>
+                        <div class="col-md-6">
+                            <div class="mb-3">
+                                <label class="form-label">Time Spent (minutes)</label>
+                                <input type="number" name="time_spent" class="form-control" min="0" placeholder="30">
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Summary</label>
+                        <input type="text" name="summary" class="form-control" placeholder="Brief description of the issue">
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Status</label>
+                        <select name="status" class="form-select">
+                            <option value="open">Open</option>
+                            <option value="closed">Closed</option>
+                            <option value="escalated">Escalated</option>
+                        </select>
+                    </div>
+                    
+                    <div class="mb-3">
+                        <label class="form-label">Resolution</label>
+                        <textarea name="resolution" class="form-control" rows="2" placeholder="How was it resolved?"></textarea>
+                    </div>
+                    
+                    <div class="d-flex gap-2">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> Save Ticket
+                        </button>
+                        <a href="{{ url_for('service_calls') }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

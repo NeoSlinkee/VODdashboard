@@ -1,0 +1,105 @@
+{% extends 'base.html' %}
+{% block title %}Ticket Statistics - VOD Report Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-ticket-detailed"></i> Ticket Statistics</h2>
+    <div>
+        <a href="{{ url_for('fetch_tickets') }}" class="btn btn-outline-primary">
+            <i class="bi bi-cloud-download"></i> Fetch from Freshdesk
+        </a>
+        <a href="{{ url_for('add_tickets') }}" class="btn btn-primary">
+            <i class="bi bi-plus-lg"></i> Add Manually
+        </a>
+    </div>
+</div>
+
+<!-- Weekly Summary -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card primary">
+            <div class="number">{{ weekly_total.opened or 0 }}</div>
+            <div class="label">Opened This Week</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card success">
+            <div class="number">{{ weekly_total.closed or 0 }}</div>
+            <div class="label">Closed This Week</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="number">{{ weekly_total.pending or 0 }}</div>
+            <div class="label">Pending</div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="number">{{ weekly_total.escalated or 0 }}</div>
+            <div class="label">Escalated</div>
+        </div>
+    </div>
+</div>
+
+<!-- Ticket History -->
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-calendar-week"></i> Ticket History by Date
+    </div>
+    <div class="card-body p-0">
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Agent</th>
+                    <th class="text-center">Opened</th>
+                    <th class="text-center">Closed</th>
+                    <th class="text-center">Pending</th>
+                    <th class="text-center">Escalated</th>
+                    <th>Source</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for stat in stats %}
+                <tr>
+                    <td>{{ stat.date.strftime('%Y-%m-%d') }}</td>
+                    <td>{{ stat.agent.name if stat.agent else 'Unknown' }}</td>
+                    <td class="text-center">{{ stat.tickets_handled }}</td>
+                    <td class="text-center text-success fw-bold">{{ stat.tickets_closed }}</td>
+                    <td class="text-center">{{ stat.tickets_pending if stat.tickets_pending is not none else '-' }}</td>
+                    <td class="text-center">{{ stat.tickets_escalated }}</td>
+                    <td>
+                        {% if stat.source == 'freshdesk' %}
+                        <span class="badge bg-info">Freshdesk</span>
+                        {% else %}
+                        <span class="badge bg-secondary">Manual</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="7" class="text-muted text-center">No ticket data yet</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if freshdesk_configured %}
+<div class="card mt-4 bg-success bg-opacity-10">
+    <div class="card-body">
+        <h6><i class="bi bi-check-circle"></i> Freshdesk Integration Active</h6>
+        <p class="mb-0">Click "Fetch from Freshdesk" to pull today's ticket statistics automatically.</p>
+    </div>
+</div>
+{% else %}
+<div class="card mt-4 bg-warning bg-opacity-10">
+    <div class="card-body">
+        <h6><i class="bi bi-exclamation-triangle"></i> Freshdesk Not Configured</h6>
+        <p class="mb-0">Go to <a href="{{ url_for('settings') }}">Settings</a> to configure your Freshdesk API credentials for automatic ticket fetching.</p>
+    </div>
+</div>
+{% endif %}
+{% endblock %}

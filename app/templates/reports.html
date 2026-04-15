@@ -1,0 +1,66 @@
+{% extends 'base.html' %}
+{% block title %}Weekly Reports - VOD Report Tracker{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-file-earmark-text"></i> Weekly Reports</h2>
+    <a href="{{ url_for('generate_report') }}" class="btn btn-primary">
+        <i class="bi bi-magic"></i> Generate Report
+    </a>
+</div>
+
+<div class="card">
+    <div class="card-header">
+        <i class="bi bi-list-ul"></i> Report History
+    </div>
+    <div class="card-body p-0">
+        {% if reports %}
+        <table class="table table-hover mb-0">
+            <thead>
+                <tr>
+                    <th>Week Ending</th>
+                    <th>Agent</th>
+                    <th>Sites Monitored</th>
+                    <th>Site Visits</th>
+                    <th>Tickets Closed</th>
+                    <th>Status</th>
+                    <th class="text-end">Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for report in reports %}
+                <tr>
+                    <td><strong>{{ report.week_ending.strftime('%Y-%m-%d') if report.week_ending else 'N/A' }}</strong></td>
+                    <td>{{ report.agent.name if report.agent else 'Unknown' }}</td>
+                    <td>{{ report.sites_monitored }}</td>
+                    <td>{{ report.sites_visited }}</td>
+                    <td>{{ report.tickets_closed }}</td>
+                    <td>
+                        {% if report.submitted_at %}
+                        <span class="badge bg-success">Submitted</span>
+                        {% else %}
+                        <span class="badge bg-warning">Draft</span>
+                        {% endif %}
+                    </td>
+                    <td class="text-end">
+                        <a href="{{ url_for('view_report', id=report.id) }}" class="btn btn-sm btn-outline-primary">
+                            <i class="bi bi-eye"></i> View
+                        </a>
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted p-3 mb-0">No reports generated yet. Click "Generate Report" to create one from this week's data.</p>
+        {% endif %}
+    </div>
+</div>
+
+<div class="card mt-4 bg-light">
+    <div class="card-body">
+        <h6><i class="bi bi-info-circle"></i> About Auto-Generated Reports</h6>
+        <p class="mb-0">Reports are automatically compiled from your monitoring logs, site visits, and ticket statistics for the week. Click "Generate Report" to create a summary for the current week.</p>
+    </div>
+</div>
+{% endblock %}

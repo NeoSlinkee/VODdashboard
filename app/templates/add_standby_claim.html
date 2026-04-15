@@ -1,0 +1,120 @@
+{% extends 'base.html' %}
+{% block title %}{{ 'Edit' if claim else 'Add' }} Standby Claim Entry{% endblock %}
+
+{% block content %}
+<div class="row justify-content-center">
+    <div class="col-md-7">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <i class="bi bi-file-earmark-plus"></i>
+                    {{ 'Edit' if claim else 'Add' }} Standby Claim Entry
+                </h5>
+            </div>
+            <div class="card-body">
+                <form method="post">
+                    <div class="row g-3">
+                        <!-- Engineer -->
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Engineer</label>
+                            <div class="d-flex gap-3 flex-wrap mt-1">
+                                {% for name, info in engineers.items() %}
+                                <div class="form-check">
+                                    <input class="form-check-input" type="radio" name="agent_name"
+                                           id="eng_{{ name }}" value="{{ name }}" required
+                                           {% if (claim and claim.agent_name == name) or (not claim and prefill_agent == name) %}checked{% endif %}>
+                                    <label class="form-check-label" for="eng_{{ name }}">
+                                        <span class="badge" style="background:{{ info.color }};color:{{ info.text }};font-size:0.9rem;padding:5px 12px;">
+                                            {{ name }}
+                                        </span>
+                                    </label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+
+                        <!-- Date -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Date</label>
+                            <input type="date" name="date" class="form-control" required
+                                   value="{{ prefill_date or '' }}">
+                        </div>
+
+                        <!-- Call received -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Call Received Time
+                                <span class="text-muted fw-normal">(optional)</span>
+                            </label>
+                            <input type="time" name="call_received" class="form-control"
+                                   value="{{ claim.call_received if claim else '' }}">
+                        </div>
+
+                        <!-- Start / End -->
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">Start Time</label>
+                            <input type="time" name="start_time" class="form-control" required
+                                   value="{{ claim.start_time if claim else '' }}"
+                                   id="start_time_input">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label fw-semibold">End Time</label>
+                            <input type="time" name="end_time" class="form-control" required
+                                   value="{{ claim.end_time if claim else '' }}"
+                                   id="end_time_input">
+                        </div>
+
+                        <!-- Calculated hours preview -->
+                        <div class="col-12">
+                            <div class="alert alert-light py-2 mb-0" id="hours_preview" style="font-size:0.9rem;">
+                                Hours will be calculated automatically on save.
+                            </div>
+                        </div>
+
+                        <!-- Ticket ref -->
+                        <div class="col-md-5">
+                            <label class="form-label fw-semibold">Ticket / Call Reference
+                                <span class="text-muted fw-normal">(optional)</span>
+                            </label>
+                            <input type="text" name="ticket_reference" class="form-control"
+                                   placeholder="e.g. #12345"
+                                   value="{{ claim.ticket_reference if claim else '' }}">
+                        </div>
+
+                        <!-- Description -->
+                        <div class="col-12">
+                            <label class="form-label fw-semibold">Description / Work Done</label>
+                            <textarea name="description" class="form-control" rows="3"
+                                      placeholder="Brief description of the standby call-out…">{{ claim.description if claim else '' }}</textarea>
+                        </div>
+
+                        <div class="col-12 d-flex gap-2">
+                            <button type="submit" class="btn btn-primary">
+                                {{ 'Save Changes' if claim else 'Add Claim Entry' }}
+                            </button>
+                            <a href="{{ url_for('standby_claims') }}" class="btn btn-outline-secondary">Cancel</a>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function calcHours() {
+    const s = document.getElementById('start_time_input').value;
+    const e = document.getElementById('end_time_input').value;
+    const preview = document.getElementById('hours_preview');
+    if (!s || !e) { preview.textContent = 'Hours will be calculated automatically on save.'; return; }
+    const [sh, sm] = s.split(':').map(Number);
+    const [eh, em] = e.split(':').map(Number);
+    let mins = (eh * 60 + em) - (sh * 60 + sm);
+    if (mins < 0) mins += 1440;
+    const hrs = (mins / 60).toFixed(2);
+    preview.innerHTML = `<i class="bi bi-clock"></i> <strong>${hrs} hours</strong> will be claimed (${s} – ${e}${mins >= 1440-1 ? ', overnight' : ''})`;
+}
+document.getElementById('start_time_input').addEventListener('change', calcHours);
+document.getElementById('end_time_input').addEventListener('change', calcHours);
+{% if claim %}calcHours();{% endif %}
+</script>
+{% endblock %}
