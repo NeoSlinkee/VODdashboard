@@ -9,6 +9,8 @@ Access at: http://localhost:5000
 
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response, send_from_directory
 from flask_sqlalchemy import SQLAlchemy
+from flask_login import LoginManager, UserMixin, login_user, logout_user, current_user
+from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
 import os
 import csv
@@ -22,12 +24,17 @@ from io import StringIO
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = 'vod-support-tracker-2026'
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///reports.db'
+app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'vod-support-tracker-2026-dev')
+app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///reports.db')
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config['REFERENCE_DOCS_FOLDER'] = os.path.join(app.instance_path, 'reference_docs')
 
 db = SQLAlchemy(app)
+
+login_manager = LoginManager(app)
+login_manager.login_view = 'login'
+login_manager.login_message = 'Please log in to access this page.'
+login_manager.login_message_category = 'info'
 
 # ============== Assigned Sites ==============
 # Sites assigned to this support engineer for monitoring
@@ -151,6 +158,37 @@ class Config(db.Model):
 def get_config(key, default=None):
     config = Config.query.filter_by(key=key).first()
     return config.value if config else default
+
+
+class User(UserMixin, db.Model):
+    """Application login users."""
+    id = db.Column(db.Integer, primary_key=True)
+    email = db.Column(db.String(120), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+    role = db.Column(db.String(20), default='viewer')
+    active = db.Column(db.Boolean, default=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
+
+    def get_id(self):
+        return str(self.id)
+
+
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+
+@app.before_request
+def require_login():
+    open_endpoints = {'login', 'logout', 'static', 'api_health', 'api_import_ruckus'}
+    if request.endpoint not in open_endpoints and not current_user.is_authenticated:
+        return redirect(url_for('login', next=request.path))
 
 def set_config(key, value):
     config = Config.query.filter_by(key=key).first()
@@ -1174,6 +1212,30 @@ def generate_weekly_report_auto(agent_id, week_ending):
     return report
 
 # ============== Routes ==============
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for('index'))
+    if request.method == 'POST':
+        email = request.form.get('email', '').strip().lower()
+        password = request.form.get('password', '')
+        user = User.query.filter_by(email=email).first()
+        if user and user.active and user.check_password(password):
+            login_user(user)
+            next_page = request.args.get('next')
+            if next_page and next_page.startswith('/'):
+                return redirect(next_page)
+            return redirect(url_for('index'))
+        flash('Invalid email or password.', 'danger')
+    return render_template('login.html')
+
+
+@app.route('/logout')
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
 
 @app.route('/')
 def index():
@@ -3006,20 +3068,25 @@ def init_db():
             db.session.commit()
             print(f"  Added {Site.query.count()} assigned sites")
 
+        # Create default admin user
+        if not User.query.filter_by(email='admin@test.com').first():
+            admin = User(email='admin@test.com', role='admin')
+            admin.set_password('Admin123!')
+            db.session.add(admin)
+            db.session.commit()
+            print("  Created test admin user: admin@test.com")
+
+
+# Initialize DB on import (required for gunicorn)
+init_db()
+
 if __name__ == '__main__':
-    init_db()
-    
     print("\n" + "="*60)
     print("  VOD Support Report Tracker v2.0")
     print("="*60)
-    print("\n  Features:")
-    print("    - Automated Ruckus data import (CSV/JSON)")
-    print("    - Freshdesk API integration")
-    print("    - Site health dashboard")
-    print("    - Auto-generated weekly reports")
     print("\n  Access: http://localhost:5000")
-    print("  Network: http://YOUR_IP:5000")
-    print("\n  Press Ctrl+C to stop")
+    print("  Press Ctrl+C to stop")
     print("="*60 + "\n")
-    
-    app.run(host='0.0.0.0', port=5000, debug=True)
+
+    debug_mode = os.environ.get('FLASK_DEBUG', 'false').lower() == 'true'
+    app.run(host='0.0.0.0', port=5000, debug=debug_mode)

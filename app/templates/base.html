@@ -143,13 +143,22 @@
             <a class="navbar-brand" href="{{ url_for('index') }}">
                 <i class="bi bi-clipboard-data"></i> Report Tracker
             </a>
-            <div class="navbar-nav ms-auto">
+            <div class="navbar-nav ms-auto d-flex flex-row align-items-center gap-3">
                 <span class="navbar-text">
                     <i class="bi bi-calendar3"></i> Week Ending: {{ week_ending if week_ending else 'N/A' }}
                 </span>
+                {% if current_user.is_authenticated %}
+                <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-light">
+                    <i class="bi bi-box-arrow-right"></i> Logout
+                </a>
+                {% endif %}
             </div>
         </div>
     </nav>
+    <div class="alert alert-warning text-center py-1 mb-0 rounded-0" style="font-size:0.82rem;">
+        <i class="bi bi-exclamation-triangle"></i>
+        <strong>Demo Environment</strong> – Internal Use Only
+    </div>
 
     <div class="container-fluid">
         <div class="row">
