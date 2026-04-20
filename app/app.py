@@ -26,9 +26,31 @@ from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'vod-support-tracker-2026-dev')
-app.config['SQLALCHEMY_DATABASE_URI'] = os.environ.get('DATABASE_URL', 'sqlite:///reports.db')
+
+# --- Database URL handling (Neon Postgres or local SQLite) ---
+_db_url = os.environ.get('DATABASE_URL', 'sqlite:///reports.db')
+# Neon / Heroku sometimes provide postgres:// which SQLAlchemy 2.x rejects
+if _db_url.startswith('postgres://'):
+    _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
+app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+# Engine options: connection pooling + SSL for Neon Postgres
+if _db_url.startswith('postgresql'):
+    app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
+        'pool_pre_ping': True,      # detect stale connections
+        'pool_size': 5,
+        'pool_recycle': 300,        # recycle connections every 5 min
+        'max_overflow': 2,
+        'connect_args': {
+            'sslmode': 'require',
+        },
+    }
+
 app.config['REFERENCE_DOCS_FOLDER'] = os.path.join(app.instance_path, 'reference_docs')
+
+# Shared secret for cron/scheduled job endpoints
+CRON_SECRET = os.environ.get('CRON_SECRET', '')
 
 db = SQLAlchemy(app)
 
@@ -163,6 +185,7 @@ def get_config(key, default=None):
 
 class User(UserMixin, db.Model):
     """Application login users."""
+    __tablename__ = 'app_user'  # 'user' is reserved in PostgreSQL
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(120), unique=True, nullable=False)
     password_hash = db.Column(db.String(256), nullable=False)
@@ -237,7 +260,8 @@ def forbidden(e):
 
 @app.before_request
 def require_login():
-    open_endpoints = {'login', 'logout', 'static', 'api_health', 'api_import_ruckus'}
+    open_endpoints = {'login', 'logout', 'static', 'api_health', 'api_import_ruckus',
+                       'cron_freshdesk_sync', 'cron_ruckus_import', 'cron_health'}
     if request.endpoint not in open_endpoints and not current_user.is_authenticated:
         return redirect(url_for('login', next=request.path))
 
@@ -3191,56 +3215,161 @@ def api_import_ruckus():
     except Exception as e:
         return jsonify({'status': 'error', 'message': str(e)}), 400
 
+
+# ============== Scheduled Job Endpoints ==============
+# Protected by CRON_SECRET bearer token for external schedulers
+# (cron-job.org, GitHub Actions, UptimeRobot, etc.)
+
+def _verify_cron_token():
+    """Verify the Bearer token matches the CRON_SECRET env var."""
+    if not CRON_SECRET:
+        return False, jsonify({'status': 'error', 'message': 'CRON_SECRET not configured on server'}), 500
+    auth = request.headers.get('Authorization', '')
+    token = auth.replace('Bearer ', '', 1) if auth.startswith('Bearer ') else ''
+    if not token or token != CRON_SECRET:
+        return False, jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
+    return True, None, None
+
+
+@app.route('/api/cron/freshdesk-sync', methods=['POST'])
+def cron_freshdesk_sync():
+    """Scheduled endpoint: sync Freshdesk tickets for all active agents.
+
+    Trigger externally with:
+        curl -X POST https://your-app.onrender.com/api/cron/freshdesk-sync \\
+             -H "Authorization: Bearer YOUR_CRON_SECRET"
+    """
+    ok, *err = _verify_cron_token()
+    if not ok:
+        return err[0], err[1]
+
+    agents = Agent.query.filter_by(active=True).all()
+    results = []
+    for agent in agents:
+        success, result = sync_freshdesk_for_agent(agent.id)
+        results.append({
+            'agent': agent.name,
+            'success': success,
+            'detail': result if success else str(result)
+        })
+
+    succeeded = sum(1 for r in results if r['success'])
+    return jsonify({
+        'status': 'success' if succeeded > 0 else 'failed',
+        'synced': succeeded,
+        'total_agents': len(agents),
+        'results': results
+    })
+
+
+@app.route('/api/cron/ruckus-import', methods=['POST'])
+def cron_ruckus_import():
+    """Scheduled endpoint: import Ruckus data posted as JSON or CSV body.
+
+    Trigger externally with:
+        curl -X POST https://your-app.onrender.com/api/cron/ruckus-import \\
+             -H "Authorization: Bearer YOUR_CRON_SECRET" \\
+             -H "Content-Type: application/json" \\
+             -d @ruckus_export.json
+    """
+    ok, *err = _verify_cron_token()
+    if not ok:
+        return err[0], err[1]
+
+    content = request.get_data(as_text=True)
+    if not content or not content.strip():
+        return jsonify({'status': 'error', 'message': 'No data in request body'}), 400
+
+    content_type = request.content_type or ''
+    try:
+        if 'json' in content_type:
+            data = parse_ruckus_json(content)
+        else:
+            data = parse_ruckus_csv(content)
+
+        result = import_ruckus_data(data)
+        return jsonify({'status': 'success', **result})
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 400
+
+
+@app.route('/api/cron/health', methods=['GET'])
+def cron_health():
+    """Health check / keep-alive endpoint for external pingers.
+
+    Configure an uptime monitor (e.g. UptimeRobot, cron-job.org) to hit
+    this endpoint every 14 minutes to prevent Render free-tier sleep.
+    """
+    return jsonify({'status': 'ok', 'timestamp': datetime.utcnow().isoformat()})
+
 # ============== Initialize ==============
+
+def _is_postgres():
+    """Check if the current database is PostgreSQL (vs SQLite)."""
+    return app.config['SQLALCHEMY_DATABASE_URI'].startswith('postgresql')
+
+def _run_sqlite_migrations(conn):
+    """Run SQLite-specific PRAGMA-based schema upgrades for local dev."""
+    from sqlalchemy import text as _text
+    try:
+        sv_cols = [row[1] for row in conn.execute(_text('PRAGMA table_info(site_visit)'))]
+        if 'location' not in sv_cols:
+            conn.execute(_text('ALTER TABLE site_visit ADD COLUMN location VARCHAR(200)'))
+            conn.commit()
+    except Exception:
+        conn.commit()
+    try:
+        ts_cols = [row[1] for row in conn.execute(_text('PRAGMA table_info(ticket_stats)'))]
+        if 'tickets_pending' not in ts_cols:
+            conn.execute(_text('ALTER TABLE ticket_stats ADD COLUMN tickets_pending INTEGER'))
+            conn.commit()
+    except Exception:
+        conn.commit()
+    try:
+        u_cols = [row[1] for row in conn.execute(_text('PRAGMA table_info(app_user)'))]
+        if 'agent_id' not in u_cols:
+            conn.execute(_text('ALTER TABLE app_user ADD COLUMN agent_id INTEGER REFERENCES agent(id)'))
+            conn.commit()
+        if 'created_by' not in u_cols:
+            conn.execute(_text('ALTER TABLE app_user ADD COLUMN created_by INTEGER'))
+            conn.commit()
+    except Exception:
+        conn.commit()
+
+def _run_postgres_migrations(conn):
+    """Run Postgres-specific schema upgrades using information_schema."""
+    from sqlalchemy import text as _text
+    def _col_exists(table, column):
+        result = conn.execute(_text(
+            "SELECT 1 FROM information_schema.columns "
+            "WHERE table_name = :tbl AND column_name = :col"
+        ), {'tbl': table, 'col': column})
+        return result.fetchone() is not None
+
+    if not _col_exists('site_visit', 'location'):
+        conn.execute(_text('ALTER TABLE site_visit ADD COLUMN location VARCHAR(200)'))
+        conn.commit()
+    if not _col_exists('ticket_stats', 'tickets_pending'):
+        conn.execute(_text('ALTER TABLE ticket_stats ADD COLUMN tickets_pending INTEGER'))
+        conn.commit()
+    if not _col_exists('app_user', 'agent_id'):
+        conn.execute(_text('ALTER TABLE app_user ADD COLUMN agent_id INTEGER REFERENCES agent(id)'))
+        conn.commit()
+    if not _col_exists('app_user', 'created_by'):
+        conn.execute(_text('ALTER TABLE app_user ADD COLUMN created_by INTEGER'))
+        conn.commit()
 
 def init_db():
     with app.app_context():
         _ensure_reference_docs_folder()
         db.create_all()
-        # Add columns/tables for schema upgrades on existing databases
+
+        # Run schema migrations (column additions for existing databases)
         with db.engine.connect() as _conn:
-            from sqlalchemy import text as _text
-            # site_visit.location
-            sv_cols = [row[1] for row in _conn.execute(_text('PRAGMA table_info(site_visit)'))]
-            if 'location' not in sv_cols:
-                _conn.execute(_text('ALTER TABLE site_visit ADD COLUMN location VARCHAR(200)'))
-                _conn.commit()
-            # ticket_stats.tickets_pending
-            ts_cols = [row[1] for row in _conn.execute(_text('PRAGMA table_info(ticket_stats)'))]
-            if 'tickets_pending' not in ts_cols:
-                _conn.execute(_text('ALTER TABLE ticket_stats ADD COLUMN tickets_pending INTEGER'))
-                _conn.commit()
-            # duty_roster table (created by db.create_all but guard for safety)
-            try:
-                _conn.execute(_text('SELECT 1 FROM duty_roster LIMIT 1'))
-            except Exception:
-                _conn.commit()
-            # standby_claim table
-            try:
-                _conn.execute(_text('SELECT 1 FROM standby_claim LIMIT 1'))
-            except Exception:
-                _conn.commit()
-            # leave_request table
-            try:
-                _conn.execute(_text('SELECT 1 FROM leave_request LIMIT 1'))
-            except Exception:
-                _conn.commit()
-            # monitoring_escalation table
-            try:
-                _conn.execute(_text('SELECT 1 FROM monitoring_escalation LIMIT 1'))
-            except Exception:
-                _conn.commit()
-            # user.agent_id + user.created_by (schema upgrade)
-            try:
-                u_cols = [row[1] for row in _conn.execute(_text('PRAGMA table_info(user)'))]
-                if 'agent_id' not in u_cols:
-                    _conn.execute(_text('ALTER TABLE user ADD COLUMN agent_id INTEGER REFERENCES agent(id)'))
-                    _conn.commit()
-                if 'created_by' not in u_cols:
-                    _conn.execute(_text('ALTER TABLE user ADD COLUMN created_by INTEGER'))
-                    _conn.commit()
-            except Exception:
-                _conn.commit()
+            if _is_postgres():
+                _run_postgres_migrations(_conn)
+            else:
+                _run_sqlite_migrations(_conn)
         
         # Create default agent
         if Agent.query.count() == 0:

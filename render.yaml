@@ -13,3 +13,7 @@ services:
         value: production
       - key: FLASK_DEBUG
         value: false
+      - key: DATABASE_URL
+        sync: false  # Set manually in Render dashboard — Neon Postgres connection string
+      - key: CRON_SECRET
+        generateValue: true  # Used to authenticate scheduled job requests
