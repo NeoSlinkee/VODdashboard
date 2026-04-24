@@ -307,6 +307,15 @@ class Agent(db.Model):
     active = db.Column(db.Boolean, default=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
+    # Standby / roster fields — replaces the old hardcoded STANDBY_ENGINEERS dict
+    roster_enabled = db.Column(db.Boolean, default=True)   # eligible for duty roster
+    standby_color = db.Column(db.String(20), default='#2a2f33')  # calendar cell bg colour
+    standby_text_color = db.Column(db.String(20), default='#ffffff')
+    standby_label = db.Column(db.String(20), default='secondary')  # Bootstrap label class
+    standby_start_date = db.Column(db.Date, nullable=True)  # when they joined the roster
+    standby_end_date = db.Column(db.Date, nullable=True)    # None = still active
+    standby_responsibilities = db.Column(db.String(300))
+
 class Site(db.Model):
     """Assigned sites to monitor."""
     id = db.Column(db.Integer, primary_key=True)
@@ -435,29 +444,32 @@ class ImportLog(db.Model):
     details = db.Column(db.Text)
 
 
-# Standby engineers and their display colours
-STANDBY_ENGINEERS = {
-    'Chris': {
-        'color': '#c0392b', 'text': '#ffffff', 'label': 'danger',
-        'start_date': '2025-01-01', 'end_date': None,
-        'responsibilities': 'Primary standby and incident response'
-    },
-    'Kudzayi': {
-        'color': '#7f8c8d', 'text': '#ffffff', 'label': 'secondary',
-        'start_date': '2025-01-01', 'end_date': None,
-        'responsibilities': 'Backup standby and daytime support'
-    },
-    'Koketso': {
-        'color': '#27ae60', 'text': '#ffffff', 'label': 'success',
-        'start_date': '2025-01-01', 'end_date': '2026-04-30',
-        'responsibilities': 'Standby coverage until month-end handover'
-    },
-    'New Agent': {
-        'color': '#8e44ad', 'text': '#ffffff', 'label': 'primary',
-        'start_date': '2026-05-15', 'end_date': None,
-        'responsibilities': 'Standby coverage from mid-May'
-    },
-}
+def _build_standby_engineers_map():
+    """Build the STANDBY_ENGINEERS-style dict dynamically from the Agent table.
+
+    Returns a dict keyed by agent name — same shape the roster/standby templates
+    expect — so existing template code works without changes.
+    """
+    try:
+        agents = Agent.query.filter_by(active=True, roster_enabled=True).all()
+    except Exception:
+        return {}
+    result = {}
+    for a in agents:
+        result[a.name] = {
+            'color': a.standby_color or '#2a2f33',
+            'text':  a.standby_text_color or '#ffffff',
+            'label': a.standby_label or 'secondary',
+            'start_date': a.standby_start_date.isoformat() if a.standby_start_date else '2025-01-01',
+            'end_date':   a.standby_end_date.isoformat()   if a.standby_end_date   else None,
+            'responsibilities': a.standby_responsibilities or '',
+        }
+    return result
+
+
+def get_standby_engineers():
+    """Return the live standby engineers map (DB-driven, no hardcoding)."""
+    return _build_standby_engineers_map()
 
 
 class DutyRoster(db.Model):
@@ -2523,7 +2535,7 @@ def add_leave_request():
     start_date = _parse_iso_date((request.form.get('start_date') or '').strip())
     end_date = _parse_iso_date((request.form.get('end_date') or '').strip())
 
-    if not agent_name or agent_name not in STANDBY_ENGINEERS:
+    if not agent_name or agent_name not in get_standby_engineers():
         flash('Please select a valid engineer.', 'warning')
         return redirect(url_for('leave_requests'))
     if not start_date or not end_date or end_date < start_date:
@@ -2770,7 +2782,8 @@ def get_public_holiday_dates():
 
 
 def is_engineer_active_for_date(agent_name, on_date):
-    info = STANDBY_ENGINEERS.get(agent_name)
+    engineers = get_standby_engineers()
+    info = engineers.get(agent_name)
     if not info:
         return False
     start_date = _parse_iso_date(info.get('start_date'))
@@ -2784,7 +2797,7 @@ def is_engineer_active_for_date(agent_name, on_date):
 
 def active_engineers_for_date(on_date):
     return {
-        name: info for name, info in STANDBY_ENGINEERS.items()
+        name: info for name, info in get_standby_engineers().items()
         if is_engineer_active_for_date(name, on_date)
     }
 
@@ -2794,7 +2807,7 @@ def active_engineers_for_month(year, month):
     first_day = datetime(year, month, 1).date()
     last_day = datetime(year, month, calendar.monthrange(year, month)[1]).date()
     result = {}
-    for name, info in STANDBY_ENGINEERS.items():
+    for name, info in get_standby_engineers().items():
         start_date = _parse_iso_date(info.get('start_date')) or first_day
         end_date = _parse_iso_date(info.get('end_date')) or last_day
         if start_date <= last_day and end_date >= first_day:
@@ -2938,7 +2951,7 @@ def duty_roster():
         year=year, month=month, month_name=month_name,
         weeks=weeks, roster_map=roster_map,
         engineers=active_engineers,
-        all_engineers=STANDBY_ENGINEERS,
+        all_engineers=get_standby_engineers(),
         public_holidays=public_holidays,
         prev_year=prev_year, prev_month=prev_month,
         next_year=next_year, next_month=next_month,
@@ -2958,7 +2971,7 @@ def add_roster_entry():
         if not date_str or not agent_name:
             flash('Date and engineer are required.', 'warning')
             return redirect(request.url)
-        if agent_name not in STANDBY_ENGINEERS:
+        if agent_name not in get_standby_engineers():
             flash('Unknown engineer name.', 'warning')
             return redirect(request.url)
 
@@ -3003,7 +3016,7 @@ def bulk_roster():
         for day in range(1, last + 1):
             key = f'day_{day}'
             agent_name = request.form.get(key, '').strip()
-            if not agent_name or agent_name not in STANDBY_ENGINEERS:
+            if not agent_name or agent_name not in get_standby_engineers():
                 continue
             d = date_cls(year, month, day)
             if not is_engineer_active_for_date(agent_name, d):
@@ -3058,7 +3071,7 @@ def roster_bulk_assign():
     month = int(request.form.get('month', date_cls.today().month))
     dates = request.form.getlist('dates')
 
-    if not agent_name or agent_name not in STANDBY_ENGINEERS:
+    if not agent_name or agent_name not in get_standby_engineers():
         flash('Unknown engineer.', 'warning')
         return redirect(url_for('duty_roster', year=year, month=month))
     if not dates:
@@ -3093,8 +3106,9 @@ def standby_claims():
     today = date_cls.today()
     year = int(request.args.get('year', today.year))
     month = int(request.args.get('month', today.month))
-    # Default to current user's agent name, or Chris for admin
-    default_agent = get_active_agent_name() or 'Chris'
+    # Default to current user's linked agent, or first active roster engineer
+    _fallback = Agent.query.filter_by(active=True, roster_enabled=True).order_by(Agent.id).first()
+    default_agent = get_active_agent_name() or (_fallback.name if _fallback else '')
     agent_filter = request.args.get('agent', default_agent)
 
     first_day = date_cls(year, month, 1)
@@ -3102,7 +3116,7 @@ def standby_claims():
 
     # Pull roster days for this engineer this month
     roster_entries = []
-    if agent_filter and agent_filter in STANDBY_ENGINEERS:
+    if agent_filter and agent_filter in get_standby_engineers():
         roster_entries = DutyRoster.query.filter(
             DutyRoster.date >= first_day,
             DutyRoster.date <= last_day,
@@ -3163,7 +3177,7 @@ def standby_claims():
         standby_pay=standby_pay, total_pay=total_pay,
         rates=rates, day_type_counts=day_type_counts,
         rates_configured=rates_configured,
-        engineers=STANDBY_ENGINEERS,
+        engineers=get_standby_engineers(),
         public_holiday_names=get_public_holiday_map(),
         agent_filter=agent_filter,
         prev_year=prev_year, prev_month=prev_month,
@@ -3186,7 +3200,7 @@ def add_standby_claim():
         if not agent_name or not date_str or not start_time or not end_time:
             flash('Engineer, date, start time and end time are required.', 'warning')
             return redirect(request.url)
-        if agent_name not in STANDBY_ENGINEERS:
+        if agent_name not in get_standby_engineers():
             flash('Unknown engineer.', 'warning')
             return redirect(request.url)
         try:
@@ -3214,7 +3228,7 @@ def add_standby_claim():
     prefill_date = request.args.get('date', '')
     prefill_agent = request.args.get('agent', '')
     return render_template('add_standby_claim.html',
-        engineers=STANDBY_ENGINEERS,
+        engineers=get_standby_engineers(),
         prefill_date=prefill_date,
         prefill_agent=prefill_agent
     )
@@ -3241,7 +3255,7 @@ def edit_standby_claim(id):
         flash('Claim updated.', 'success')
         return redirect(url_for('standby_claims', year=claim.date.year, month=claim.date.month))
     return render_template('add_standby_claim.html',
-        engineers=STANDBY_ENGINEERS, claim=claim,
+        engineers=get_standby_engineers(), claim=claim,
         prefill_date=claim.date.strftime('%Y-%m-%d'),
         prefill_agent=claim.agent_name
     )
@@ -3266,7 +3280,7 @@ def export_standby_claim():
     month = int(request.args.get('month', today.month))
     agent_name = request.args.get('agent', '')
 
-    if not agent_name or agent_name not in STANDBY_ENGINEERS:
+    if not agent_name or agent_name not in get_standby_engineers():
         flash('Please select an engineer to export a claim for.', 'warning')
         return redirect(url_for('standby_claims', year=year, month=month))
 
@@ -3341,7 +3355,7 @@ def export_standby_claim():
         employee_signature_date_display=employee_signature_date_display,
         manager_signature_name=manager_signature_name,
         manager_signature_date_display=manager_signature_date_display,
-        engineers=STANDBY_ENGINEERS,
+        engineers=get_standby_engineers(),
         generated_on=today
     )
 
@@ -3604,51 +3618,64 @@ def cron_email_monthly_summary():
 @login_required
 def wallboard():
     """Office TV wallboard \u2014 full-screen live operations display (auto-refreshes every 60s)."""
-    now = datetime.utcnow()
-    today = now.date()
+    try:
+        now = datetime.utcnow()
+        today = now.date()
 
-    total_sites = Site.query.filter_by(active=True).count()
-    sites_healthy = Site.query.filter(Site.active == True, Site.aps_offline == 0).count()
-    total_aps = db.session.query(db.func.sum(Site.total_aps)).filter(Site.active == True).scalar() or 0
-    total_offline = db.session.query(db.func.sum(Site.aps_offline)).filter(Site.active == True).scalar() or 0
-    health_pct = round((sites_healthy / total_sites * 100) if total_sites else 0)
+        total_sites = Site.query.filter_by(active=True).count() or 0
+        sites_healthy = Site.query.filter(Site.active == True, Site.aps_offline == 0).count() or 0
+        total_aps = int(db.session.query(db.func.sum(Site.total_aps)).filter(Site.active == True).scalar() or 0)
+        total_offline = int(db.session.query(db.func.sum(Site.aps_offline)).filter(Site.active == True).scalar() or 0)
+        health_pct = round((sites_healthy / total_sites * 100) if total_sites > 0 else 0)
 
-    total_engineers = Agent.query.filter_by(active=True).count()
-    approved_today = LeaveRequest.query.filter(
-        LeaveRequest.status == 'approved',
-        LeaveRequest.start_date <= today,
-        LeaveRequest.end_date >= today
-    ).count()
-    engineers_on_duty = max(total_engineers - approved_today, 0)
+        total_engineers = Agent.query.filter_by(active=True).count() or 0
+        approved_today = LeaveRequest.query.filter(
+            LeaveRequest.status == 'approved',
+            LeaveRequest.start_date <= today,
+            LeaveRequest.end_date >= today
+        ).count() or 0
+        engineers_on_duty = max(total_engineers - approved_today, 0)
 
-    week_start = today - timedelta(days=today.weekday())
-    escalated_this_week = db.session.query(
-        db.func.sum(TicketStats.tickets_escalated)
-    ).filter(
-        TicketStats.date >= week_start,
-        TicketStats.date <= today
-    ).scalar() or 0
+        week_start = today - timedelta(days=today.weekday())
+        escalated_this_week = int(db.session.query(
+            db.func.sum(TicketStats.tickets_escalated)
+        ).filter(
+            TicketStats.date >= week_start,
+            TicketStats.date <= today
+        ).scalar() or 0)
 
-    tickets_today = db.session.query(
-        db.func.sum(TicketStats.tickets_handled)
-    ).filter(
-        TicketStats.date == today
-    ).scalar() or 0
+        tickets_today = int(db.session.query(
+            db.func.sum(TicketStats.tickets_handled)
+        ).filter(
+            TicketStats.date == today
+        ).scalar() or 0)
 
-    return render_template(
-        'wallboard.html',
-        health_pct=health_pct,
-        sites_healthy=sites_healthy,
-        total_sites=total_sites,
-        total_aps=total_aps,
-        total_offline=int(total_offline),
-        engineers_on_duty=engineers_on_duty,
-        total_engineers=total_engineers,
-        escalated_this_week=int(escalated_this_week),
-        tickets_today=int(tickets_today),
-        now=now,
-        refresh_seconds=60,
-    )
+        return render_template(
+            'wallboard.html',
+            health_pct=health_pct,
+            sites_healthy=sites_healthy,
+            total_sites=total_sites,
+            total_aps=total_aps,
+            total_offline=total_offline,
+            engineers_on_duty=engineers_on_duty,
+            total_engineers=total_engineers,
+            escalated_this_week=escalated_this_week,
+            tickets_today=tickets_today,
+            now=now,
+            refresh_seconds=60,
+            wallboard_error=None,
+        )
+    except Exception as exc:
+        app.logger.exception('Wallboard render error')
+        return render_template(
+            'wallboard.html',
+            health_pct=0, sites_healthy=0, total_sites=0,
+            total_aps=0, total_offline=0,
+            engineers_on_duty=0, total_engineers=0,
+            escalated_this_week=0, tickets_today=0,
+            now=datetime.utcnow(), refresh_seconds=60,
+            wallboard_error=str(exc),
+        )
 
 # ============== Initialize ==============
 
@@ -3686,6 +3713,23 @@ def _run_sqlite_migrations(conn):
             conn.commit()
     except Exception:
         conn.commit()
+    # Standby / roster columns on agent table
+    try:
+        a_cols = [row[1] for row in conn.execute(_text('PRAGMA table_info(agent)'))]
+        for _col, _type in [
+            ('roster_enabled',         'BOOLEAN DEFAULT 1'),
+            ('standby_color',          'VARCHAR(20)'),
+            ('standby_text_color',     'VARCHAR(20)'),
+            ('standby_label',          'VARCHAR(20)'),
+            ('standby_start_date',     'DATE'),
+            ('standby_end_date',       'DATE'),
+            ('standby_responsibilities', 'VARCHAR(300)'),
+        ]:
+            if _col not in a_cols:
+                conn.execute(_text(f'ALTER TABLE agent ADD COLUMN {_col} {_type}'))
+                conn.commit()
+    except Exception:
+        conn.commit()
 
 def _run_postgres_migrations(conn):
     """Run Postgres-specific schema upgrades using information_schema."""
@@ -3712,6 +3756,19 @@ def _run_postgres_migrations(conn):
     if not _col_exists('app_user', 'last_login'):
         conn.execute(_text('ALTER TABLE app_user ADD COLUMN last_login TIMESTAMP'))
         conn.commit()
+    # Standby / roster columns on agent table
+    for _col, _type in [
+        ('roster_enabled',         'BOOLEAN DEFAULT TRUE'),
+        ('standby_color',          'VARCHAR(20)'),
+        ('standby_text_color',     'VARCHAR(20)'),
+        ('standby_label',          'VARCHAR(20)'),
+        ('standby_start_date',     'DATE'),
+        ('standby_end_date',       'DATE'),
+        ('standby_responsibilities', 'VARCHAR(300)'),
+    ]:
+        if not _col_exists('agent', _col):
+            conn.execute(_text(f'ALTER TABLE agent ADD COLUMN {_col} {_type}'))
+            conn.commit()
 
 def init_db():
     with app.app_context():
