@@ -42,7 +42,7 @@
                         <span class="badge bg-secondary">Inactive</span>
                         {% endif %}
                     </td>
-                    <td>{{ agent.created_at.strftime('%Y-%m-%d') }}</td>
+                    <td>{{ agent.created_at.strftime('%Y-%m-%d') if agent.created_at else '-' }}</td>
                     <td class="text-end">
                         <a href="{{ url_for('edit_agent', id=agent.id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
                         <a href="{{ url_for('toggle_agent', id=agent.id) }}" class="btn btn-sm btn-outline-secondary">
