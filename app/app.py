@@ -30,9 +30,12 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'vod-support-tracker-202
 
 # --- Database URL handling (Neon Postgres or local SQLite) ---
 _db_url = os.environ.get('DATABASE_URL', 'sqlite:///reports.db')
-# Neon / Heroku sometimes provide postgres:// which SQLAlchemy 2.x rejects
+# Normalise to psycopg3 dialect (postgresql+psycopg://) so the driver works on
+# any Python version including 3.14.  psycopg2 C extension is incompatible with 3.14.
 if _db_url.startswith('postgres://'):
-    _db_url = _db_url.replace('postgres://', 'postgresql://', 1)
+    _db_url = _db_url.replace('postgres://', 'postgresql+psycopg://', 1)
+elif _db_url.startswith('postgresql://') and '+' not in _db_url.split('://')[0]:
+    _db_url = _db_url.replace('postgresql://', 'postgresql+psycopg://', 1)
 app.config['SQLALCHEMY_DATABASE_URI'] = _db_url
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
