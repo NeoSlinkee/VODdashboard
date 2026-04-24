@@ -1,11 +1,11 @@
-﻿{% extends 'base.html' %}
-{% block title %}Add Site — {{ APP_NAME }}{% endblock %}
+{% extends 'base.html' %}
+{% block title %}Edit Site — {{ APP_NAME }}{% endblock %}
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
-    <h2 class="text-white mb-0"><i class="bi bi-building-add me-2"></i>Add Site</h2>
-    <small class="text-muted">Register a new site in the operational asset register</small>
+    <h2 class="text-white mb-0"><i class="bi bi-pencil-square me-2"></i>Edit Site</h2>
+    <small class="text-muted">{{ site.name }}</small>
   </div>
   <a href="{{ url_for('sites') }}" class="btn btn-outline-secondary btn-sm">
     <i class="bi bi-arrow-left me-1"></i>Back to Sites
@@ -22,35 +22,35 @@
             <div class="col-12">
               <label class="form-label text-muted small">Site Name <span class="text-danger">*</span></label>
               <input type="text" name="name" class="form-control bg-dark text-white border-secondary" required
-                     placeholder="e.g., Piazza Montecasino">
+                     value="{{ site.name }}">
             </div>
 
             <div class="col-md-6">
               <label class="form-label text-muted small">Brand / Property Group</label>
               <input type="text" name="brand" class="form-control bg-dark text-white border-secondary"
-                     placeholder="e.g., Garden Court">
+                     value="{{ site.brand or '' }}" placeholder="e.g., Garden Court">
             </div>
 
             <div class="col-md-6">
               <label class="form-label text-muted small">City</label>
               <input type="text" name="city" class="form-control bg-dark text-white border-secondary"
-                     placeholder="e.g., Sandton">
+                     value="{{ site.city or '' }}" placeholder="e.g., Sandton">
             </div>
 
             <div class="col-md-6">
               <label class="form-label text-muted small">Reach Category <span class="text-danger">*</span></label>
               <select name="region" class="form-select bg-dark text-white border-secondary" required>
-                <option value="within_reach">Within Reach</option>
-                <option value="far_reach">Far Reach</option>
+                <option value="within_reach" {% if site.region == 'within_reach' %}selected{% endif %}>Within Reach</option>
+                <option value="far_reach"    {% if site.region == 'far_reach'    %}selected{% endif %}>Far Reach</option>
               </select>
             </div>
 
             <div class="col-md-6">
               <label class="form-label text-muted small">Priority Level</label>
               <select name="priority_level" class="form-select bg-dark text-white border-secondary">
-                <option value="normal" selected>Normal</option>
-                <option value="high">High</option>
-                <option value="low">Low</option>
+                <option value="normal" {% if site.priority_level == 'normal' or not site.priority_level %}selected{% endif %}>Normal</option>
+                <option value="high"   {% if site.priority_level == 'high'   %}selected{% endif %}>High</option>
+                <option value="low"    {% if site.priority_level == 'low'    %}selected{% endif %}>Low</option>
               </select>
             </div>
 
@@ -59,7 +59,7 @@
               <select name="assigned_agent_id" class="form-select bg-dark text-white border-secondary">
                 <option value="">— Unassigned —</option>
                 {% for a in agents %}
-                <option value="{{ a.id }}">{{ a.name }}</option>
+                <option value="{{ a.id }}" {% if site.assigned_agent_id == a.id %}selected{% endif %}>{{ a.name }}</option>
                 {% endfor %}
               </select>
             </div>
@@ -67,26 +67,26 @@
             <div class="col-md-6">
               <label class="form-label text-muted small">Total APs</label>
               <input type="number" name="total_aps" class="form-control bg-dark text-white border-secondary"
-                     min="0" value="0" placeholder="0">
+                     min="0" value="{{ site.total_aps or 0 }}">
               <div class="form-text text-muted">Auto-updated on Ruckus import.</div>
             </div>
 
             <div class="col-12">
               <label class="form-label text-muted small">SmartZone Alias Name</label>
               <input type="text" name="ruckus_zone_name" class="form-control bg-dark text-white border-secondary"
-                     placeholder="Leave blank to use site name">
+                     value="{{ site.ruckus_zone_name or '' }}" placeholder="Leave blank to use site name">
               <div class="form-text text-muted">Exact name as shown in the Ruckus controller — used for import matching.</div>
             </div>
 
             <div class="col-12">
               <label class="form-label text-muted small">Notes</label>
               <textarea name="notes" class="form-control bg-dark text-white border-secondary" rows="3"
-                        placeholder="Optional operational notes…"></textarea>
+                        placeholder="Optional operational notes…">{{ site.notes or '' }}</textarea>
             </div>
 
             <div class="col-12 d-flex gap-2 pt-1">
               <button type="submit" class="btn btn-primary">
-                <i class="bi bi-save me-1"></i>Add Site
+                <i class="bi bi-save me-1"></i>Save Changes
               </button>
               <a href="{{ url_for('sites') }}" class="btn btn-outline-secondary">Cancel</a>
             </div>
@@ -95,6 +95,31 @@
       </div>
     </div>
   </div>
+
+  {# Quick info panel #}
+  <div class="col-md-4 mt-4 mt-md-0">
+    <div class="card bg-dark border-secondary">
+      <div class="card-header text-muted small border-secondary">Site Info</div>
+      <div class="card-body small text-muted">
+        <div class="mb-2"><span class="text-white">Status</span><br>
+          {% if site.active %}<span class="badge bg-success">Active</span>
+          {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+        </div>
+        <div class="mb-2"><span class="text-white">Created</span><br>
+          {{ site.created_at.strftime('%d %b %Y') if site.created_at else '—' }}
+        </div>
+        <div class="mb-2"><span class="text-white">Monitoring Logs</span><br>
+          {{ site.monitoring_logs | length }}
+        </div>
+        <div class="mt-3">
+          <a href="{{ url_for('toggle_site', id=site.id) }}"
+             class="btn btn-sm {% if site.active %}btn-outline-warning{% else %}btn-outline-success{% endif %} w-100">
+            <i class="bi bi-{% if site.active %}pause{% else %}play{% endif %} me-1"></i>
+            {{ 'Deactivate Site' if site.active else 'Activate Site' }}
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
 </div>
 {% endblock %}
-

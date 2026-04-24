@@ -270,7 +270,7 @@ def inject_brand():
     return {
         'APP_NAME': get_config('app_name', 'VOD Operations Portal'),
         'APP_LOGO': get_config('app_logo'),       # base64 data-URI or None
-        'COMPANY_NAME': get_config('company_name', 'Vodacom'),
+        'COMPANY_NAME': get_config('company_name', 'VODGroup'),
     }
 
 
@@ -317,16 +317,24 @@ class Agent(db.Model):
     standby_responsibilities = db.Column(db.String(300))
 
 class Site(db.Model):
-    """Assigned sites to monitor."""
+    """Assigned sites — operational asset register."""
     id = db.Column(db.Integer, primary_key=True)
-    name = db.Column(db.String(200), nullable=False, unique=True)
-    region = db.Column(db.String(50))  # 'within_reach' or 'far_reach'
-    ruckus_zone_name = db.Column(db.String(200))  # Name as it appears in Ruckus
-    total_aps = db.Column(db.Integer, default=0)
-    active = db.Column(db.Boolean, default=True)
-    created_at = db.Column(db.DateTime, default=datetime.utcnow)
-    
-    monitoring_logs = db.relationship('MonitoringLog', backref='site', lazy=True)
+    name        = db.Column(db.String(200), nullable=False, unique=True)
+    brand       = db.Column(db.String(100))          # Property group / brand
+    city        = db.Column(db.String(100))
+    region      = db.Column(db.String(50))            # 'within_reach' | 'far_reach'
+    ruckus_zone_name = db.Column(db.String(200))      # SmartZone alias for CSV matching
+    assigned_agent_id = db.Column(db.Integer, db.ForeignKey('agent.id'), nullable=True)
+    priority_level = db.Column(db.String(20), default='normal')  # low / normal / high
+    total_aps   = db.Column(db.Integer, default=0)
+    aps_offline = db.Column(db.Integer, default=0)    # cached from latest Ruckus import
+    active      = db.Column(db.Boolean, default=True)
+    notes       = db.Column(db.Text)
+    created_at  = db.Column(db.DateTime, default=datetime.utcnow)
+
+    monitoring_logs    = db.relationship('MonitoringLog', backref='site', lazy=True)
+    assigned_agent     = db.relationship('Agent', foreign_keys=[assigned_agent_id],
+                                         backref='assigned_sites')
 
 class MonitoringLog(db.Model):
     """Auto-populated from Ruckus data."""
@@ -1558,46 +1566,110 @@ def site_health():
 # ----- Site Management -----
 
 @app.route('/sites')
+@login_required
 def sites():
-    show_inactive = request.args.get('show_inactive') == '1'
-    all_sites = Site.query.order_by(Site.region, Site.name).all()
-    active_sites = [s for s in all_sites if s.active]
-    inactive_sites = [s for s in all_sites if not s.active]
-    display_sites = all_sites if show_inactive else active_sites
-    within_reach = [s for s in display_sites if s.region == 'within_reach']
-    far_reach = [s for s in display_sites if s.region == 'far_reach']
+    reach_filter    = request.args.get('reach', '')
+    agent_filter    = request.args.get('agent', '')
+    priority_filter = request.args.get('priority', '')
+    city_filter     = request.args.get('city', '')
+    show_inactive   = request.args.get('show_inactive') == '1'
+
+    q = Site.query
+    if not show_inactive:
+        q = q.filter_by(active=True)
+    if reach_filter:
+        q = q.filter(Site.region == reach_filter)
+    if agent_filter:
+        q = q.filter(Site.assigned_agent_id == int(agent_filter))
+    if priority_filter:
+        q = q.filter(Site.priority_level == priority_filter)
+    if city_filter:
+        q = q.filter(Site.city == city_filter)
+
+    all_sites = q.order_by(Site.region, Site.name).all()
+
+    within_reach = [s for s in all_sites if s.region == 'within_reach']
+    far_reach    = [s for s in all_sites if s.region == 'far_reach']
+    inactive_count = Site.query.filter_by(active=False).count()
+
+    agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
+    cities = [r[0] for r in db.session.query(Site.city).filter(
+        Site.city != None, Site.city != '').distinct().order_by(Site.city).all()]
+
     return render_template('sites.html',
         within_reach=within_reach,
         far_reach=far_reach,
         all_sites=all_sites,
+        agents=agents,
+        cities=cities,
         show_inactive=show_inactive,
-        inactive_count=len(inactive_sites)
+        inactive_count=inactive_count,
+        reach_filter=reach_filter,
+        agent_filter=agent_filter,
+        priority_filter=priority_filter,
+        city_filter=city_filter,
     )
 
+
 @app.route('/sites/add', methods=['GET', 'POST'])
+@login_required
 def add_site():
+    agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
     if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        if not name:
+            flash('Site name is required.', 'warning')
+            return render_template('add_site.html', agents=agents)
+        agent_id_raw = request.form.get('assigned_agent_id', '').strip()
         site = Site(
-            name=request.form['name'],
-            region=request.form['region'],
-            ruckus_zone_name=request.form.get('ruckus_zone_name') or request.form['name'],
-            total_aps=int(request.form.get('total_aps', 0)),
-            active=True
+            name              = name,
+            brand             = request.form.get('brand', '').strip() or None,
+            city              = request.form.get('city', '').strip() or None,
+            region            = request.form.get('region', 'within_reach'),
+            ruckus_zone_name  = request.form.get('ruckus_zone_name', '').strip() or name,
+            assigned_agent_id = int(agent_id_raw) if agent_id_raw.isdigit() else None,
+            priority_level    = request.form.get('priority_level', 'normal'),
+            total_aps         = int(request.form.get('total_aps', 0) or 0),
+            notes             = request.form.get('notes', '').strip() or None,
+            active            = True,
         )
         db.session.add(site)
         db.session.commit()
         flash(f'Site "{site.name}" added.', 'success')
         return redirect(url_for('sites'))
-    return render_template('add_site.html')
+    return render_template('add_site.html', agents=agents)
+
+
+@app.route('/sites/<int:id>/edit', methods=['GET', 'POST'])
+@login_required
+def edit_site(id):
+    site   = Site.query.get_or_404(id)
+    agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
+    if request.method == 'POST':
+        agent_id_raw = request.form.get('assigned_agent_id', '').strip()
+        site.name              = request.form.get('name', site.name).strip()
+        site.brand             = request.form.get('brand', '').strip() or None
+        site.city              = request.form.get('city', '').strip() or None
+        site.region            = request.form.get('region', site.region)
+        site.ruckus_zone_name  = request.form.get('ruckus_zone_name', '').strip() or site.name
+        site.assigned_agent_id = int(agent_id_raw) if agent_id_raw.isdigit() else None
+        site.priority_level    = request.form.get('priority_level', 'normal')
+        site.total_aps         = int(request.form.get('total_aps', 0) or 0)
+        site.notes             = request.form.get('notes', '').strip() or None
+        db.session.commit()
+        flash(f'Site "{site.name}" updated.', 'success')
+        return redirect(url_for('sites'))
+    return render_template('edit_site.html', site=site, agents=agents)
+
 
 @app.route('/sites/import', methods=['GET', 'POST'])
+@login_required
 def import_sites():
     """Bulk import sites from JSON."""
     if request.method == 'POST':
         try:
             data = json.loads(request.form['sites_json'])
             count = 0
-            
             for region, site_list in data.items():
                 for site_name in site_list:
                     existing = Site.query.filter_by(name=site_name).first()
@@ -1609,16 +1681,16 @@ def import_sites():
                         )
                         db.session.add(site)
                         count += 1
-            
             db.session.commit()
             flash(f'Imported {count} new sites.', 'success')
             return redirect(url_for('sites'))
         except Exception as e:
             flash(f'Error: {str(e)}', 'danger')
-    
     return render_template('import_sites.html')
 
+
 @app.route('/sites/<int:id>/toggle')
+@login_required
 def toggle_site(id):
     site = Site.query.get_or_404(id)
     site.active = not site.active
@@ -1626,7 +1698,9 @@ def toggle_site(id):
     flash(f'Site "{site.name}" {"activated" if site.active else "deactivated"}.', 'info')
     return redirect(url_for('sites'))
 
+
 @app.route('/sites/<int:id>/delete', methods=['POST'])
+@login_required
 def delete_site(id):
     site = Site.query.get_or_404(id)
     name = site.name
@@ -2469,7 +2543,7 @@ def settings():
         'public_holidays_json': get_config('public_holidays_json', json.dumps(DEFAULT_PUBLIC_HOLIDAYS, indent=2)),
         'leave_approval_email': get_config('leave_approval_email', 'luke@company.com'),
         'app_name': get_config('app_name', 'VOD Operations Portal'),
-        'company_name': get_config('company_name', 'Vodacom'),
+        'company_name': get_config('company_name', 'VODGroup'),
         'app_logo': get_config('app_logo', ''),
     }
     
@@ -3941,6 +4015,22 @@ def _is_postgres():
 def _run_sqlite_migrations(conn):
     """Run SQLite-specific PRAGMA-based schema upgrades for local dev."""
     from sqlalchemy import text as _text
+    # Site management columns
+    try:
+        s_cols = [row[1] for row in conn.execute(_text('PRAGMA table_info(site)'))]
+        for _col, _type in [
+            ('brand',             'VARCHAR(100)'),
+            ('city',              'VARCHAR(100)'),
+            ('assigned_agent_id', 'INTEGER'),
+            ('priority_level',    "VARCHAR(20) DEFAULT 'normal'"),
+            ('aps_offline',       'INTEGER DEFAULT 0'),
+            ('notes',             'TEXT'),
+        ]:
+            if _col not in s_cols:
+                conn.execute(_text(f'ALTER TABLE site ADD COLUMN {_col} {_type}'))
+                conn.commit()
+    except Exception:
+        conn.commit()
     try:
         sv_cols = [row[1] for row in conn.execute(_text('PRAGMA table_info(site_visit)'))]
         if 'location' not in sv_cols:
@@ -3996,6 +4086,18 @@ def _run_postgres_migrations(conn):
         ), {'tbl': table, 'col': column})
         return result.fetchone() is not None
 
+    # Site management columns
+    for _col, _type in [
+        ('brand',             'VARCHAR(100)'),
+        ('city',              'VARCHAR(100)'),
+        ('assigned_agent_id', 'INTEGER'),
+        ('priority_level',    "VARCHAR(20) DEFAULT 'normal'"),
+        ('aps_offline',       'INTEGER DEFAULT 0'),
+        ('notes',             'TEXT'),
+    ]:
+        if not _col_exists('site', _col):
+            conn.execute(_text(f'ALTER TABLE site ADD COLUMN {_col} {_type}'))
+            conn.commit()
     if not _col_exists('site_visit', 'location'):
         conn.execute(_text('ALTER TABLE site_visit ADD COLUMN location VARCHAR(200)'))
         conn.commit()
@@ -4025,6 +4127,82 @@ def _run_postgres_migrations(conn):
             conn.execute(_text(f'ALTER TABLE agent ADD COLUMN {_col} {_type}'))
             conn.commit()
 
+# -----------------------------------------------------------------------
+# Official Site Registry
+# Upserts the canonical site list on every boot.
+# New sites are created; existing sites get brand/city/ruckus_zone_name
+# filled in if those fields are currently empty.
+# assigned_agent_id is set to the first active Agent if not already set.
+# -----------------------------------------------------------------------
+OFFICIAL_SITE_REGISTRY = [
+    # WITHIN REACH
+    {'name': 'Piazza Montecasino',               'brand': 'Piazza',            'city': 'Fourways',         'region': 'within_reach', 'ruckus_zones': ['Piazza Montecasino', 'Piazza']},
+    {'name': 'Garden Court Morningside Sandton',  'brand': 'Garden Court',      'city': 'Sandton',          'region': 'within_reach', 'ruckus_zones': ['Garden Court Morningside Sandton', 'GC Morningside']},
+    {'name': 'Palazzo Montecasino',               'brand': 'Palazzo',           'city': 'Fourways',         'region': 'within_reach', 'ruckus_zones': ['Palazzo Montecasino', 'Palazzo']},
+    {'name': 'Pivot Montecasino',                 'brand': 'Pivot',             'city': 'Fourways',         'region': 'within_reach', 'ruckus_zones': ['Pivot Montecasino', 'Pivot']},
+    {'name': 'Riverside Sun',                     'brand': 'Riverside Sun',     'city': 'Pretoria',         'region': 'within_reach', 'ruckus_zones': ['Riverside Sun']},
+    {'name': 'Stay Easy Pretoria',                'brand': 'Stay Easy',         'city': 'Pretoria',         'region': 'within_reach', 'ruckus_zones': ['Stay Easy Pretoria', 'StayEasy Pretoria']},
+    {'name': 'Southern Sun Pretoria',             'brand': 'Southern Sun',      'city': 'Pretoria',         'region': 'within_reach', 'ruckus_zones': ['Southern Sun Pretoria', 'SS Pretoria']},
+    {'name': 'Garden Court EastGate',             'brand': 'Garden Court',      'city': 'Johannesburg',     'region': 'within_reach', 'ruckus_zones': ['Garden Court EastGate', 'GC EastGate']},
+    {'name': 'Stay Easy EastGate',                'brand': 'Stay Easy',         'city': 'Johannesburg',     'region': 'within_reach', 'ruckus_zones': ['Stay Easy EastGate', 'StayEasy EastGate']},
+    {'name': 'Garden Court OR Tambo',             'brand': 'Garden Court',      'city': 'Kempton Park',     'region': 'within_reach', 'ruckus_zones': ['Garden Court OR Tambo', 'GC OR Tambo']},
+    {'name': 'IC Airport OR Tambo',               'brand': 'InterContinental',  'city': 'Kempton Park',     'region': 'within_reach', 'ruckus_zones': ['InterConti OR Tambo', 'IC OR Tambo', 'IC Airport']},
+    {'name': 'SS OR Tambo',                       'brand': 'Southern Sun',      'city': 'Kempton Park',     'region': 'within_reach', 'ruckus_zones': ['Southern Sun OR Tambo', 'SS OR Tambo']},
+    # FAR REACH
+    {'name': 'Stay Easy Pietermaritzburg',        'brand': 'Stay Easy',         'city': 'Pietermaritzburg', 'region': 'far_reach',    'ruckus_zones': ['Stay Easy Pietermaritzburg', 'StayEasy PMB']},
+    {'name': 'GC South Beach Durban',             'brand': 'Garden Court',      'city': 'Durban',           'region': 'far_reach',    'ruckus_zones': ['Garden Court South Beach', 'GC South Beach']},
+    {'name': 'The Edward Durban',                 'brand': 'The Edward',        'city': 'Durban',           'region': 'far_reach',    'ruckus_zones': ['The Edward', 'Edward Durban']},
+    {'name': 'GC Marine Parade Durban',           'brand': 'Garden Court',      'city': 'Durban',           'region': 'far_reach',    'ruckus_zones': ['Garden Court Marine Parade', 'GC Marine Parade']},
+    {'name': 'SS Elangeni & Maharani Durban',     'brand': 'Southern Sun',      'city': 'Durban',           'region': 'far_reach',    'ruckus_zones': ['SS Elangeni', 'Elangeni', 'Maharani', 'SS Maharani']},
+    {'name': 'Suncoast Hotel and Towers',         'brand': 'Suncoast',          'city': 'Durban',           'region': 'far_reach',    'ruckus_zones': ['Suncoast Hotel', 'Suncoast Towers', 'Suncoast']},
+    {'name': 'The Ridge Hotel',                   'brand': 'The Ridge',         'city': 'KwaZulu-Natal',    'region': 'far_reach',    'ruckus_zones': ['The Ridge', 'Ridge Hotel']},
+]
+
+
+def _seed_official_site_registry():
+    """Upsert the official site list into the DB.
+
+    - Creates new sites that do not exist yet.
+    - Updates brand/city/ruckus_zone_name on existing sites if those fields are blank.
+    - Sets assigned_agent_id on sites that have none, using the first active Agent.
+    Safe to call on every boot.
+    """
+    default_agent = Agent.query.filter_by(active=True).order_by(Agent.id).first()
+    created = updated = 0
+    for rec in OFFICIAL_SITE_REGISTRY:
+        primary_alias = rec['ruckus_zones'][0]
+        site = Site.query.filter_by(name=rec['name']).first()
+        if not site:
+            site = Site(
+                name              = rec['name'],
+                brand             = rec['brand'],
+                city              = rec['city'],
+                region            = rec['region'],
+                ruckus_zone_name  = primary_alias,
+                assigned_agent_id = default_agent.id if default_agent else None,
+                priority_level    = 'normal',
+                active            = True,
+            )
+            db.session.add(site)
+            created += 1
+        else:
+            if not site.brand:
+                site.brand = rec['brand']
+                updated += 1
+            if not site.city:
+                site.city = rec['city']
+                updated += 1
+            if not site.ruckus_zone_name:
+                site.ruckus_zone_name = primary_alias
+                updated += 1
+            if not site.assigned_agent_id and default_agent:
+                site.assigned_agent_id = default_agent.id
+                updated += 1
+    db.session.commit()
+    if created or updated:
+        print(f'  Site registry: {created} created, {updated} fields filled in')
+
+
 def init_db():
     with app.app_context():
         _ensure_reference_docs_folder()
@@ -4044,20 +4222,8 @@ def init_db():
             db.session.commit()
             print("  Created default agent 'Chris'")
         
-        # Seed assigned sites if empty
-        if Site.query.count() == 0:
-            print("  Seeding assigned sites...")
-            for region, sites in ASSIGNED_SITES.items():
-                for site_data in sites:
-                    site = Site(
-                        name=site_data['name'],
-                        region=region,
-                        ruckus_zone_name=', '.join(site_data['ruckus_zones'][:2]),
-                        active=True
-                    )
-                    db.session.add(site)
-            db.session.commit()
-            print(f"  Added {Site.query.count()} assigned sites")
+        # Seed / upgrade the official site registry (runs every boot; safe to re-run)
+        _seed_official_site_registry()
 
         # ── Seed users from SEED_USERS env var (runs on every startup; safe to leave set) ──
         # Format: email:password:role,email2:password2:role2
@@ -4095,11 +4261,11 @@ def init_db():
         # Create initial superadmin only if NO users exist at all and SEED_USERS is not set.
         # This runs once on a brand-new database.
         elif User.query.count() == 0:
-            admin = User(email='admin@vodacom.co.za', role='superadmin')
+            admin = User(email='admin@vodgroup.co.za', role='superadmin')
             admin.set_password('ChangeMe@2026!')
             db.session.add(admin)
             db.session.commit()
-            print("  Created initial superadmin: admin@vodacom.co.za  (change password immediately)")
+            print("  Created initial superadmin: admin@vodgroup.co.za  (change password immediately)")
 
 
 # ============== CLI Commands ==============
