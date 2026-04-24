@@ -3744,10 +3744,42 @@ def init_db():
             db.session.commit()
             print(f"  Added {Site.query.count()} assigned sites")
 
-        # Create initial superadmin only if NO users exist at all.
-        # This runs once on a brand-new database and is intentionally generic
-        # so the operator immediately changes it after first login.
-        if User.query.count() == 0:
+        # ── Seed users from SEED_USERS env var (runs on every startup; safe to leave set) ──
+        # Format: email:password:role,email2:password2:role2
+        # Roles:  superadmin | admin | viewer
+        # Example:
+        #   SEED_USERS=chris@vod.co.za:MyPass1:superadmin,luke@vod.co.za:MyPass2:admin,mgmt@vod.co.za:MyPass3:viewer
+        _seed_spec = os.environ.get('SEED_USERS', '').strip()
+        if _seed_spec:
+            for _entry in _seed_spec.split(','):
+                _entry = _entry.strip()
+                if not _entry:
+                    continue
+                _parts = _entry.split(':')
+                if len(_parts) < 3:
+                    print(f"  SEED_USERS: skipping malformed entry (need email:password:role): {_entry}")
+                    continue
+                _email, _pwd, _role = _parts[0].strip(), _parts[1].strip(), _parts[2].strip()
+                if _role not in ('superadmin', 'admin', 'viewer'):
+                    print(f"  SEED_USERS: skipping {_email} — invalid role '{_role}'")
+                    continue
+                _existing = User.query.filter_by(email=_email).first()
+                if _existing:
+                    _existing.set_password(_pwd)
+                    _existing.role = _role
+                    _existing.active = True
+                    db.session.commit()
+                    print(f"  SEED_USERS: updated  {_email}  ({_role})")
+                else:
+                    _u = User(email=_email, role=_role)
+                    _u.set_password(_pwd)
+                    db.session.add(_u)
+                    db.session.commit()
+                    print(f"  SEED_USERS: created  {_email}  ({_role})")
+
+        # Create initial superadmin only if NO users exist at all and SEED_USERS is not set.
+        # This runs once on a brand-new database.
+        elif User.query.count() == 0:
             admin = User(email='admin@vodacom.co.za', role='superadmin')
             admin.set_password('ChangeMe@2026!')
             db.session.add(admin)
