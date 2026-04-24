@@ -3316,9 +3316,12 @@ def standby_claims():
     today = date_cls.today()
     year = int(request.args.get('year', today.year))
     month = int(request.args.get('month', today.month))
-    # Default to current user's linked agent, or first active roster engineer
-    _fallback = Agent.query.filter_by(active=True, roster_enabled=True).order_by(Agent.id).first()
-    default_agent = get_active_agent_name() or (_fallback.name if _fallback else '')
+    # Roster-enabled agents for the picker
+    roster_agents = Agent.query.filter_by(active=True, roster_enabled=True).order_by(Agent.name).all()
+    roster_names = [a.name for a in roster_agents]
+    # Default: current user's linked agent name, then first roster agent
+    _fallback = roster_agents[0].name if roster_agents else ''
+    default_agent = get_active_agent_name() or _fallback
     agent_filter = request.args.get('agent', default_agent)
 
     first_day = date_cls(year, month, 1)
@@ -3388,6 +3391,7 @@ def standby_claims():
         rates=rates, day_type_counts=day_type_counts,
         rates_configured=rates_configured,
         engineers=get_standby_engineers(),
+        roster_agents=roster_agents,
         public_holiday_names=get_public_holiday_map(),
         agent_filter=agent_filter,
         prev_year=prev_year, prev_month=prev_month,

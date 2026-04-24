@@ -7,6 +7,19 @@
     <div class="text-muted" style="font-size:0.9rem;">Roster-based calculation only</div>
 </div>
 
+<!-- Engineer selector -->
+<div class="mb-3 d-flex align-items-center gap-2 flex-wrap">
+    <span class="text-muted" style="font-size:0.85rem;font-weight:600;">ENGINEER:</span>
+    {% for agent in roster_agents %}
+    {% set eng = engineers.get(agent.name, {}) %}
+    <a href="{{ url_for('standby_claims', year=year, month=month, agent=agent.name) }}"
+       class="btn btn-sm {{ 'btn-primary' if agent.name == agent_filter else 'btn-outline-secondary' }}"
+       style="{% if agent.name == agent_filter %}background:{{ eng.get('color','#1a73e8') }};border-color:{{ eng.get('color','#1a73e8') }};color:{{ eng.get('text','#fff') }};{% endif %}">
+        {{ agent.name }}
+    </a>
+    {% endfor %}
+</div>
+
 <!-- Month navigation -->
 <div class="card mb-3">
     <div class="card-body py-2 d-flex align-items-center gap-3 flex-wrap">
