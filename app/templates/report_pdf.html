@@ -28,20 +28,26 @@
 
         .header {
             margin-bottom: 8px;
-            border-bottom: 1px solid #ddd;
-            padding-bottom: 6px;
+            border-bottom: 3px solid #f7c443;
+            padding-bottom: 8px;
+            background: #2a2f33;
+            color: #ffffff;
+            padding: 10px 12px;
+            border-radius: 6px 6px 0 0;
+            margin-bottom: 10px;
         }
 
         .title {
-            font-size: 24px;
+            font-size: 22px;
             font-weight: 700;
             margin: 0;
+            color: #ffffff;
         }
 
         .subtitle {
-            color: #666;
+            color: rgba(255,255,255,0.65);
             margin: 0;
-            font-size: 13px;
+            font-size: 12px;
         }
 
         .status-badge {
@@ -57,26 +63,29 @@
         }
 
         .stat-card {
-            border: 1px solid #e5e5e5;
+            border: 1px solid #d9d9d9;
+            border-top: 3px solid #f7c443;
             border-radius: 6px;
             text-align: center;
             padding: 10px 6px;
+            background: #ffffff;
         }
 
         .stat-card .number {
             font-size: 31px;
             font-weight: 700;
             margin-bottom: 2px;
-            color: #2c3e50;
+            color: #2a2f33;
         }
 
         .stat-card .label {
             font-size: 10px;
-            color: #6d6d6d;
+            color: #666666;
             text-transform: uppercase;
+            letter-spacing: 0.05em;
         }
 
-        .number.info { color: #3498db; }
+        .number.info    { color: #2a2f33; }
         .number.success { color: #27ae60; }
         .number.warning { color: #e74c3c; }
 
@@ -87,11 +96,13 @@
         }
 
         .section-header {
-            font-size: 13px;
+            font-size: 12px;
             font-weight: 700;
-            padding: 7px 9px;
-            border-bottom: 1px solid #ececec;
-            background: #fafafa;
+            padding: 6px 9px;
+            border-bottom: 2px solid #f7c443;
+            background: #2a2f33;
+            color: #ffffff;
+            border-radius: 4px 4px 0 0;
         }
 
         .section-body {
@@ -123,9 +134,11 @@
 
         .page-note {
             font-size: 10px;
-            color: #666;
+            color: #666666;
             text-align: right;
             margin-top: 4px;
+            border-top: 1px solid #f7c443;
+            padding-top: 4px;
         }
 
         .row-tight {
@@ -153,17 +166,25 @@
     </script>
 
     <div class="report-page">
-    <div class="header d-flex justify-content-between align-items-start">
+    <div class="header d-flex justify-content-between align-items-center">
         <div>
-            <h1 class="title"><i class="bi bi-file-earmark-text"></i> Weekly Report</h1>
-            <p class="subtitle">{{ report.agent.name }} - Week Ending {{ report.week_ending }}</p>
+            <h1 class="title">VOD Operations Portal</h1>
+            <p class="subtitle" style="font-size:13px; font-weight:600; color:#f7c443; margin-top:2px;">Weekly Management Report</p>
+            <p class="subtitle">{{ report.agent.name }} &mdash; Week Ending {{ report.week_ending }}</p>
+            <p class="subtitle" style="font-size:10px;">{{ COMPANY_NAME }} Internal Operations &mdash; Confidential</p>
         </div>
-        <div>
+        <div style="text-align:right;">
+            {% if APP_LOGO %}
+                <img src="{{ APP_LOGO }}" style="max-height:52px; max-width:150px; object-fit:contain; background:#fff; border-radius:4px; padding:3px;" alt="{{ APP_NAME }}">
+                <br>
+            {% endif %}
+            <span style="margin-top:6px; display:inline-block;">
             {% if report.submitted_at %}
             <span class="badge bg-success status-badge">Submitted {{ report.submitted_at.strftime('%Y-%m-%d %H:%M') }}</span>
             {% else %}
             <span class="badge bg-warning text-dark status-badge">Draft</span>
             {% endif %}
+            </span>
         </div>
     </div>
 

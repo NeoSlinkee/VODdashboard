@@ -2,7 +2,7 @@ services:
   - type: web
     name: vod-report-tracker
     env: python
-    plan: free
+    plan: starter            # paid plan — no free-tier sleep
     rootDir: app
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
@@ -12,8 +12,142 @@ services:
       - key: FLASK_ENV
         value: production
       - key: FLASK_DEBUG
-        value: false
+        value: "false"
       - key: DATABASE_URL
-        sync: false  # Set manually in Render dashboard — Neon Postgres connection string
+        sync: false          # Set manually in Render dashboard — Neon Postgres connection string
       - key: CRON_SECRET
-        generateValue: true  # Used to authenticate scheduled job requests
+        generateValue: true  # Shared secret for all cron job endpoints
+      - key: APP_BASE_URL
+        sync: false          # e.g. https://vod-report-tracker.onrender.com  (no trailing slash)
+
+  # ── Ruckus import 07:00 SAST (05:00 UTC) ──────────────────────────────────
+  - type: cron
+    name: vod-ruckus-import-0700
+    env: python
+    rootDir: app
+    schedule: "0 5 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python -c "
+      import os, requests;
+      base = os.environ.get('APP_BASE_URL','').rstrip('/');
+      secret = os.environ.get('CRON_SECRET','');
+      r = requests.post(base+'/api/cron/ruckus-import',
+          headers={'Authorization':'Bearer '+secret}, timeout=60);
+      print(r.status_code, r.text[:300])
+      "
+    envVars:
+      - key: CRON_SECRET
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+
+  # ── Ruckus import 14:00 SAST (12:00 UTC) ──────────────────────────────────
+  - type: cron
+    name: vod-ruckus-import-1400
+    env: python
+    rootDir: app
+    schedule: "0 12 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python -c "
+      import os, requests;
+      base = os.environ.get('APP_BASE_URL','').rstrip('/');
+      secret = os.environ.get('CRON_SECRET','');
+      r = requests.post(base+'/api/cron/ruckus-import',
+          headers={'Authorization':'Bearer '+secret}, timeout=60);
+      print(r.status_code, r.text[:300])
+      "
+    envVars:
+      - key: CRON_SECRET
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+
+  # ── Freshdesk sync 06:15 SAST (04:15 UTC) ─────────────────────────────────
+  - type: cron
+    name: vod-freshdesk-sync-daily
+    env: python
+    rootDir: app
+    schedule: "15 4 * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python -c "
+      import os, requests;
+      base = os.environ.get('APP_BASE_URL','').rstrip('/');
+      secret = os.environ.get('CRON_SECRET','');
+      r = requests.post(base+'/api/cron/freshdesk-sync',
+          headers={'Authorization':'Bearer '+secret}, timeout=120);
+      print(r.status_code, r.text[:300])
+      "
+    envVars:
+      - key: CRON_SECRET
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+
+  # ── Monday 08:00 SAST (06:00 UTC) — weekly plan reminder ──────────────────
+  - type: cron
+    name: vod-email-monday-reminder
+    env: python
+    rootDir: app
+    schedule: "0 6 * * 1"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python -c "
+      import os, requests;
+      base = os.environ.get('APP_BASE_URL','').rstrip('/');
+      secret = os.environ.get('CRON_SECRET','');
+      r = requests.post(base+'/api/cron/email-monday-reminder',
+          headers={'Authorization':'Bearer '+secret}, timeout=60);
+      print(r.status_code, r.text[:300])
+      "
+    envVars:
+      - key: CRON_SECRET
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+
+  # ── Friday 13:00 SAST (11:00 UTC) — report due reminder ───────────────────
+  - type: cron
+    name: vod-email-friday-reminder
+    env: python
+    rootDir: app
+    schedule: "0 11 * * 5"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python -c "
+      import os, requests;
+      base = os.environ.get('APP_BASE_URL','').rstrip('/');
+      secret = os.environ.get('CRON_SECRET','');
+      r = requests.post(base+'/api/cron/email-friday-reminder',
+          headers={'Authorization':'Bearer '+secret}, timeout=60);
+      print(r.status_code, r.text[:300])
+      "
+    envVars:
+      - key: CRON_SECRET
+        sync: false
+      - key: APP_BASE_URL
+        sync: false
+
+  # ── 1st of month 07:00 SAST (05:00 UTC) — monthly ops summary ─────────────
+  - type: cron
+    name: vod-email-monthly-summary
+    env: python
+    rootDir: app
+    schedule: "0 5 1 * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >-
+      python -c "
+      import os, requests;
+      base = os.environ.get('APP_BASE_URL','').rstrip('/');
+      secret = os.environ.get('CRON_SECRET','');
+      r = requests.post(base+'/api/cron/email-monthly-summary',
+          headers={'Authorization':'Bearer '+secret}, timeout=120);
+      print(r.status_code, r.text[:300])
+      "
+    envVars:
+      - key: CRON_SECRET
+        sync: false
+      - key: APP_BASE_URL
+        sync: false

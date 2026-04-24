@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VOD Operations — Live Wallboard</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <style>
+        :root {
+            --gold:    #f7c443;
+            --charcoal: #2a2f33;
+            --charcoal-mid: #363b40;
+            --charcoal-light: #3e444a;
+        }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            background: var(--charcoal);
+            color: #fff;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+        }
+        body { display: flex; flex-direction: column; }
+
+        /* ── Header ─────────────────────────────── */
+        .wb-header {
+            background: #1d2124;
+            border-bottom: 3px solid var(--gold);
+            padding: 14px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-shrink: 0;
+        }
+        .wb-brand { font-size: 1.5rem; font-weight: 800; letter-spacing: 1px; color: var(--gold); }
+        .wb-brand span { color: #ccc; font-weight: 400; }
+        .wb-brand small { display: block; font-size: 0.72rem; color: #666; font-weight: 400; letter-spacing: 2px; text-transform: uppercase; margin-top: 2px; }
+        .wb-clock { font-size: 2.8rem; font-weight: 800; color: var(--gold); letter-spacing: 3px; font-variant-numeric: tabular-nums; line-height: 1; }
+        .wb-date { font-size: 0.85rem; color: #888; text-align: right; margin-top: 4px; }
+
+        /* ── KPI Grid ────────────────────────────── */
+        .wb-grid {
+            flex: 1;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: 1fr 1fr;
+            gap: 18px;
+            padding: 18px 32px;
+            min-height: 0;
+        }
+        .wb-card {
+            background: var(--charcoal-mid);
+            border: 2px solid #454a4f;
+            border-radius: 14px;
+            padding: 30px 36px;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            transition: border-color 0.4s;
+        }
+        .wb-card.ok   { border-color: #27ae60; }
+        .wb-card.warn { border-color: var(--gold); }
+        .wb-card.crit { border-color: #e74c3c; }
+
+        .wb-label {
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            letter-spacing: 2.5px;
+            color: #777;
+            margin-bottom: 14px;
+        }
+        .wb-label i { margin-right: 6px; font-size: 1rem; }
+
+        .wb-value {
+            font-size: clamp(4rem, 8vw, 7rem);
+            font-weight: 900;
+            line-height: 1;
+            font-variant-numeric: tabular-nums;
+            color: var(--gold);
+        }
+        .ok   .wb-value { color: #2ecc71; }
+        .warn .wb-value { color: var(--gold); }
+        .crit .wb-value { color: #e74c3c; }
+
+        .wb-sub {
+            font-size: 1rem;
+            color: #888;
+            margin-top: 12px;
+        }
+
+        /* ── Footer ─────────────────────────────── */
+        .wb-footer {
+            background: #1d2124;
+            border-top: 1px solid var(--charcoal-mid);
+            padding: 8px 32px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: #555;
+            flex-shrink: 0;
+        }
+        .wb-bar { width: 100px; height: 3px; background: var(--charcoal-light); border-radius: 3px; overflow: hidden; }
+        .wb-bar-fill {
+            height: 100%;
+            background: var(--gold);
+            animation: barfill {{ refresh_seconds }}s linear infinite;
+        }
+        @keyframes barfill { from { width: 0% } to { width: 100% } }
+    </style>
+</head>
+<body>
+
+<!-- ── Header ── -->
+<div class="wb-header">
+    <div>
+        <div class="wb-brand">VOD <span>Operations</span>
+            <small>Live Wallboard</small>
+        </div>
+    </div>
+    <div style="text-align:right">
+        <div class="wb-clock" id="wbClock">--:--:--</div>
+        <div class="wb-date" id="wbDate">{{ now.strftime('%A, %d %B %Y') }}</div>
+    </div>
+</div>
+
+<!-- ── KPI Grid ── -->
+<div class="wb-grid">
+
+    {# Site Health #}
+    {% set h_cls = 'ok' if health_pct >= 90 else ('warn' if health_pct >= 70 else 'crit') %}
+    <div class="wb-card {{ h_cls }}">
+        <div class="wb-label"><i class="bi bi-diagram-3-fill"></i>Site Health</div>
+        <div class="wb-value">{{ health_pct }}%</div>
+        <div class="wb-sub">
+            {{ sites_healthy }} of {{ total_sites }} sites healthy
+            &nbsp;&middot;&nbsp;
+            {{ total_offline }} AP{{ 's' if total_offline != 1 }} offline
+        </div>
+    </div>
+
+    {# Engineers on Duty #}
+    {% set e_cls = 'ok' if engineers_on_duty >= 2 else ('warn' if engineers_on_duty == 1 else 'crit') %}
+    <div class="wb-card {{ e_cls }}">
+        <div class="wb-label"><i class="bi bi-people-fill"></i>Engineers on Duty</div>
+        <div class="wb-value">{{ engineers_on_duty }}</div>
+        <div class="wb-sub">
+            of {{ total_engineers }} total
+            &nbsp;&middot;&nbsp;
+            {{ total_engineers - engineers_on_duty }} on leave today
+        </div>
+    </div>
+
+    {# Escalations This Week #}
+    {% set esc_cls = 'ok' if escalated_this_week == 0 else ('warn' if escalated_this_week <= 3 else 'crit') %}
+    <div class="wb-card {{ esc_cls }}">
+        <div class="wb-label"><i class="bi bi-exclamation-triangle-fill"></i>Escalations This Week</div>
+        <div class="wb-value">{{ escalated_this_week }}</div>
+        <div class="wb-sub">Tickets escalated since Monday</div>
+    </div>
+
+    {# Tickets Handled Today #}
+    <div class="wb-card">
+        <div class="wb-label"><i class="bi bi-ticket-detailed-fill"></i>Tickets Handled Today</div>
+        <div class="wb-value">{{ tickets_today }}</div>
+        <div class="wb-sub">Across all engineers</div>
+    </div>
+
+</div>
+
+<!-- ── Footer ── -->
+<div class="wb-footer">
+    <span>Auto-refreshes every {{ refresh_seconds }}s &nbsp;&middot;&nbsp; VOD Operations Portal</span>
+    <div class="wb-bar"><div class="wb-bar-fill"></div></div>
+    <span>Data as at {{ now.strftime('%H:%M UTC') }}</span>
+</div>
+
+<script>
+    // Live clock
+    (function tick() {
+        var d = new Date();
+        var pad = function(n){ return String(n).padStart(2,'0'); };
+        document.getElementById('wbClock').textContent =
+            pad(d.getHours()) + ':' + pad(d.getMinutes()) + ':' + pad(d.getSeconds());
+        setTimeout(tick, 1000);
+    })();
+
+    // Full page reload every {{ refresh_seconds }} seconds
+    setTimeout(function(){ location.reload(); }, {{ refresh_seconds }} * 1000);
+</script>
+</body>
+</html>

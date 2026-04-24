@@ -3,104 +3,151 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login – Report Tracker</title>
+    <title>Sign In &ndash; {{ APP_NAME }}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
         body {
-            background: linear-gradient(135deg, #2c3e50, #34495e);
+            background: #2a2f33;
             min-height: 100vh;
             display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
         }
-        .login-card {
+        .login-wrap {
             width: 100%;
-            max-width: 420px;
+            max-width: 440px;
+            padding: 16px;
+        }
+        .login-card {
             border: none;
-            border-radius: 12px;
-            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            border-radius: 14px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+            overflow: hidden;
         }
         .login-header {
-            background: linear-gradient(135deg, #2c3e50, #34495e);
+            background: #1e2326;
             color: white;
-            border-radius: 12px 12px 0 0;
-            padding: 30px;
+            padding: 36px 30px 26px;
             text-align: center;
+            border-bottom: 3px solid #f7c443;
         }
-        .login-header i {
-            font-size: 2.5rem;
+        .login-header .brand-logo {
+            max-height: 64px;
+            max-width: 200px;
+            object-fit: contain;
+            margin-bottom: 14px;
+        }
+        .login-header .brand-icon {
+            font-size: 2.8rem;
+            color: #f7c443;
             margin-bottom: 10px;
             display: block;
-            color: #3498db;
+        }
+        .login-header h4 {
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            margin-bottom: 4px;
+        }
+        .login-header small {
+            color: rgba(255,255,255,0.45);
+            font-size: 0.78rem;
         }
         .login-body {
-            padding: 30px;
+            padding: 32px 30px;
+            background: #ffffff;
         }
-        .demo-banner {
-            background: #fff3cd;
-            border: 1px solid #ffc107;
-            border-radius: 6px;
-            padding: 10px 14px;
-            font-size: 0.85rem;
-            margin-bottom: 20px;
-            color: #856404;
+        .login-body .form-label {
+            color: #666666;
+        }
+        .login-body .form-control:focus {
+            border-color: #f7c443;
+            box-shadow: 0 0 0 0.2rem rgba(247,196,67,0.25);
+        }
+        .btn-signin {
+            background: #f7c443 !important;
+            border-color: #f7c443 !important;
+            color: #2a2f33 !important;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            padding: 10px;
+        }
+        .btn-signin:hover {
+            background: #d4a52e !important;
+            border-color: #d4a52e !important;
+            color: #2a2f33 !important;
+        }
+        .login-footer {
+            color: rgba(255,255,255,0.25);
+            font-size: 0.7rem;
+            text-align: center;
+            margin-top: 20px;
         }
     </style>
 </head>
 <body>
-    <div class="login-card card">
-        <div class="login-header">
-            <i class="bi bi-clipboard-data"></i>
-            <h4 class="mb-1">Report Tracker</h4>
-            <small class="opacity-75">VOD Support Dashboard</small>
-        </div>
-        <div class="login-body">
-            <div class="demo-banner">
-                <i class="bi bi-info-circle"></i>
-                <strong>Demo Environment</strong> – Internal Use Only
-            </div>
-
-            {% if forbidden %}
-            <div class="alert alert-danger">
-                <i class="bi bi-shield-exclamation"></i>
-                <strong>Access Denied</strong> – You don't have permission to access that page.
-            </div>
-            {% endif %}
-
-            {% with messages = get_flashed_messages(with_categories=true) %}
-                {% if messages %}
-                    {% for category, message in messages %}
-                        <div class="alert alert-{{ 'danger' if category == 'danger' else 'info' }} alert-dismissible fade show">
-                            {{ message }}
-                            <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                        </div>
-                    {% endfor %}
+    <div class="login-wrap">
+        <div class="login-card card">
+            <div class="login-header">
+                {% if APP_LOGO %}
+                    <img src="{{ APP_LOGO }}" class="brand-logo" alt="{{ APP_NAME }}">
+                    <div></div>
+                {% else %}
+                    <i class="bi bi-grid-3x3-gap-fill brand-icon"></i>
                 {% endif %}
-            {% endwith %}
+                <h4 class="mb-1">{{ APP_NAME }}</h4>
+                <small>Internal Operations System &mdash; Authorised Access Only</small>
+            </div>
+            <div class="login-body">
+                {% if request.args.get('reason') == 'timeout' %}
+                <div class="alert alert-warning">
+                    <i class="bi bi-clock-history"></i> Your session expired. Please sign in again.
+                </div>
+                {% endif %}
 
-            <form method="POST" action="{{ url_for('login', next=request.args.get('next', '')) }}">
-                <div class="mb-3">
-                    <label for="email" class="form-label fw-semibold">Email</label>
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="bi bi-envelope"></i></span>
-                        <input type="email" class="form-control" id="email" name="email"
-                               placeholder="you@example.com" required autofocus>
-                    </div>
+                {% if forbidden %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-shield-exclamation"></i>
+                    <strong>Access Denied</strong> &ndash; You don&apos;t have permission to access that page.
                 </div>
-                <div class="mb-4">
-                    <label for="password" class="form-label fw-semibold">Password</label>
-                    <div class="input-group">
-                        <span class="input-group-text"><i class="bi bi-lock"></i></span>
-                        <input type="password" class="form-control" id="password" name="password"
-                               placeholder="Password" required>
+                {% endif %}
+
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ 'danger' if category == 'danger' else 'info' }} alert-dismissible fade show">
+                                {{ message }}
+                                <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                <form method="POST" action="{{ url_for('login', next=request.args.get('next', '')) }}">
+                    <div class="mb-3">
+                        <label for="email" class="form-label fw-semibold text-secondary small text-uppercase">Email Address</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light border-end-0"><i class="bi bi-envelope text-muted"></i></span>
+                            <input type="email" class="form-control border-start-0" id="email" name="email"
+                                   placeholder="you@company.com" required autofocus>
+                        </div>
                     </div>
-                </div>
-                <button type="submit" class="btn btn-primary w-100">
-                    <i class="bi bi-box-arrow-in-right me-1"></i> Sign In
-                </button>
-            </form>
+                    <div class="mb-4">
+                        <label for="password" class="form-label fw-semibold text-secondary small text-uppercase">Password</label>
+                        <div class="input-group">
+                            <span class="input-group-text bg-light border-end-0"><i class="bi bi-lock text-muted"></i></span>
+                            <input type="password" class="form-control border-start-0" id="password" name="password"
+                                   placeholder="Password" required>
+                        </div>
+                    </div>
+                    <button type="submit" class="btn btn-signin btn-primary w-100 py-2">
+                        <i class="bi bi-box-arrow-in-right me-1"></i> Sign In
+                    </button>
+                </form>
+            </div>
         </div>
+        <p class="login-footer">&copy; {{ COMPANY_NAME }} &mdash; Internal Systems &mdash; Restricted Access</p>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>

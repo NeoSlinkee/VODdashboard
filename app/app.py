@@ -21,7 +21,8 @@ import requests
 import smtplib
 from email.message import EmailMessage
 from difflib import get_close_matches
-from io import StringIO
+from io import StringIO, BytesIO
+from openpyxl import Workbook
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
@@ -49,8 +50,14 @@ if _db_url.startswith('postgresql'):
 
 app.config['REFERENCE_DOCS_FOLDER'] = os.path.join(app.instance_path, 'reference_docs')
 
+# Session expires after 8 hours of inactivity
+app.config['PERMANENT_SESSION_LIFETIME'] = timedelta(hours=8)
+
 # Shared secret for cron/scheduled job endpoints
 CRON_SECRET = os.environ.get('CRON_SECRET', '')
+
+# Base URL for this deployment — used in email links and cron callbacks
+APP_BASE_URL = os.environ.get('APP_BASE_URL', 'http://localhost:5000').rstrip('/')
 
 db = SQLAlchemy(app)
 
@@ -194,6 +201,7 @@ class User(UserMixin, db.Model):
     agent_id = db.Column(db.Integer, db.ForeignKey('agent.id'), nullable=True)
     created_by = db.Column(db.Integer, nullable=True)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    last_login = db.Column(db.DateTime, nullable=True)
 
     agent = db.relationship('Agent', backref='users')
 
@@ -251,6 +259,16 @@ def admin_required(f):
             abort(403)
         return f(*args, **kwargs)
     return decorated_function
+
+
+@app.context_processor
+def inject_brand():
+    """Inject branding variables into every template context."""
+    return {
+        'APP_NAME': get_config('app_name', 'VOD Operations Portal'),
+        'APP_LOGO': get_config('app_logo'),       # base64 data-URI or None
+        'COMPANY_NAME': get_config('company_name', 'Vodacom'),
+    }
 
 
 @app.errorhandler(403)
@@ -1297,6 +1315,10 @@ def login():
         password = request.form.get('password', '')
         user = User.query.filter_by(email=email).first()
         if user and user.active and user.check_password(password):
+            from flask import session as flask_session
+            flask_session.permanent = True
+            user.last_login = datetime.utcnow()
+            db.session.commit()
             login_user(user)
             next_page = request.args.get('next')
             if next_page and next_page.startswith('/'):
@@ -1375,6 +1397,14 @@ def index():
         'total_excluded_aps': total_excluded_aps
     }
     
+    approved_today = LeaveRequest.query.filter(
+        LeaveRequest.status == 'approved',
+        LeaveRequest.start_date <= today,
+        LeaveRequest.end_date >= today
+    ).count()
+
+    _we = get_week_ending()
+    _ws = _we - timedelta(days=4)
     return render_template('index.html',
         health_summary=health_summary,
         site_status=site_status,
@@ -1384,7 +1414,28 @@ def index():
         recent_imports=recent_imports,
         total_tickets_today=total_tickets_today,
         data_quality=data_quality,
-        maintenance_sites=maintenance_sites
+        maintenance_sites=maintenance_sites,
+        leave_pending=LeaveRequest.query.filter_by(status='pending').count(),
+        leave_approved=LeaveRequest.query.filter_by(status='approved').filter(
+            LeaveRequest.end_date >= today).count(),
+        escalated_this_week=db.session.query(db.func.sum(TicketStats.tickets_escalated)).filter(
+            TicketStats.date >= _ws).scalar() or 0,
+        tickets_closed_this_week=db.session.query(db.func.sum(TicketStats.tickets_closed)).filter(
+            TicketStats.date >= _ws).scalar() or 0,
+        total_aps_offline=sum(s.get('aps_offline', 0) for s in site_status),
+        total_sites=len([s for s in site_status if s['status'] != 'unknown']),
+        total_engineers=len(agents),
+        engineers_available=max(len(agents) - approved_today, 0),
+        ticket_trend=[
+            {
+                'week': (_we - timedelta(weeks=i)).strftime('%d %b'),
+                'closed': db.session.query(db.func.sum(TicketStats.tickets_closed)).filter(
+                    TicketStats.date >= (_we - timedelta(weeks=i, days=4)),
+                    TicketStats.date <= (_we - timedelta(weeks=i))
+                ).scalar() or 0
+            }
+            for i in range(3, -1, -1)
+        ]
     )
 
 # ----- Site Health -----
@@ -2274,6 +2325,32 @@ def settings():
             set_config('standby_rate_sunday', request.form.get('standby_rate_sunday', '700').strip())
             set_config('standby_rate_public_holiday', request.form.get('standby_rate_public_holiday', '700').strip())
             set_config('standby_public_holidays', request.form.get('standby_public_holidays', '').strip())
+        elif section == 'branding':
+            app_name = request.form.get('app_name', '').strip()
+            company_name = request.form.get('company_name', '').strip()
+            if app_name:
+                set_config('app_name', app_name)
+            if company_name:
+                set_config('company_name', company_name)
+            # Logo upload — stored as base64 data-URI in Config table
+            # (avoids ephemeral filesystem on Render)
+            logo_file = request.files.get('app_logo')
+            if logo_file and logo_file.filename:
+                allowed_mime = {'image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml'}
+                mime = logo_file.mimetype or ''
+                if mime not in allowed_mime:
+                    flash('Logo must be PNG, JPG, or SVG.', 'danger')
+                    return redirect(url_for('settings'))
+                import base64
+                logo_bytes = logo_file.read()
+                if len(logo_bytes) > 500_000:  # 500 KB limit
+                    flash('Logo file is too large (max 500 KB).', 'danger')
+                    return redirect(url_for('settings'))
+                logo_b64 = base64.b64encode(logo_bytes).decode('utf-8')
+                data_uri = f'data:{mime};base64,{logo_b64}'
+                set_config('app_logo', data_uri)
+            elif request.form.get('remove_logo'):
+                set_config('app_logo', '')
         flash('Settings saved.', 'success')
         return redirect(url_for('settings'))
     
@@ -2289,7 +2366,10 @@ def settings():
         'standby_rate_public_holiday': get_config('standby_rate_public_holiday', '700'),
         'standby_public_holidays': get_config('standby_public_holidays', ''),
         'public_holidays_json': get_config('public_holidays_json', json.dumps(DEFAULT_PUBLIC_HOLIDAYS, indent=2)),
-        'leave_approval_email': get_config('leave_approval_email', 'luke@company.com')
+        'leave_approval_email': get_config('leave_approval_email', 'luke@company.com'),
+        'app_name': get_config('app_name', 'VOD Operations Portal'),
+        'company_name': get_config('company_name', 'Vodacom'),
+        'app_logo': get_config('app_logo', ''),
     }
     
     return render_template('settings.html', config=config, agents=agents)
@@ -2379,6 +2459,57 @@ def leave_requests():
         approval_email=get_config('leave_approval_email', 'luke@company.com'),
         today=today,
         holiday_map=get_public_holiday_map()
+    )
+
+
+@app.route('/leave/export.xlsx')
+@admin_required
+def export_leave_calendar_excel():
+    """Export leave calendar as Excel for management."""
+    leaves = LeaveRequest.query.order_by(LeaveRequest.start_date.asc(), LeaveRequest.agent_name.asc()).all()
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Leave Calendar'
+
+    ws.append([
+        'Engineer', 'Start Date', 'End Date', 'Status',
+        'Coverage Agent', 'Approver', 'Reason', 'Decision Notes',
+        'Requested At', 'Decided At'
+    ])
+
+    for leave in leaves:
+        ws.append([
+            leave.agent_name,
+            leave.start_date.isoformat() if leave.start_date else '',
+            leave.end_date.isoformat() if leave.end_date else '',
+            leave.status,
+            leave.coverage_agent or '',
+            leave.approver or '',
+            leave.reason or '',
+            leave.decision_notes or '',
+            leave.created_at.strftime('%Y-%m-%d %H:%M') if leave.created_at else '',
+            leave.decided_at.strftime('%Y-%m-%d %H:%M') if leave.decided_at else '',
+        ])
+
+    for col in ws.columns:
+        max_len = 0
+        col_letter = col[0].column_letter
+        for cell in col:
+            val = str(cell.value or '')
+            if len(val) > max_len:
+                max_len = len(val)
+        ws.column_dimensions[col_letter].width = min(max(max_len + 2, 12), 48)
+
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+
+    month_tag = datetime.now().strftime('%Y-%m')
+    return Response(
+        output.getvalue(),
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        headers={'Content-Disposition': f'attachment; filename=leave_calendar_{month_tag}.xlsx'}
     )
 
 
@@ -2710,6 +2841,36 @@ def send_leave_submission_email(leave_request):
         f'Status: {leave_request.status}\n\n'
         f'Reason:\n{leave_request.reason or "(none)"}\n'
     )
+
+    try:
+        with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
+            server.starttls()
+            if smtp_user:
+                server.login(smtp_user, smtp_password)
+            server.send_message(msg)
+        return True, None
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _send_system_email(to_address, subject, body):
+    """Reusable helper: send a system-generated email via the configured SMTP settings."""
+    smtp_host = (get_config('smtp_host') or '').strip()
+    smtp_port = int((get_config('smtp_port') or '587').strip() or '587')
+    smtp_user = (get_config('smtp_user') or '').strip()
+    smtp_password = (get_config('smtp_password') or '').strip()
+    smtp_from = (get_config('smtp_from') or smtp_user or 'noreply@localhost').strip()
+
+    if not smtp_host:
+        return False, 'SMTP host not configured'
+    if not to_address:
+        return False, 'No recipient address'
+
+    msg = EmailMessage()
+    msg['Subject'] = subject
+    msg['From'] = smtp_from
+    msg['To'] = to_address
+    msg.set_content(body)
 
     try:
         with smtplib.SMTP(smtp_host, smtp_port, timeout=20) as server:
@@ -3302,6 +3463,190 @@ def cron_health():
     """
     return jsonify({'status': 'ok', 'timestamp': datetime.utcnow().isoformat()})
 
+
+@app.route('/api/cron/email-monday-reminder', methods=['POST'])
+def cron_email_monday_reminder():
+    """Scheduled endpoint: Monday 08:00 — weekly plan reminder to admin users."""
+    ok, *err = _verify_cron_token()
+    if not ok:
+        return err[0], err[1]
+
+    admins = User.query.filter(
+        User.role.in_(['admin', 'superadmin']),
+        User.active == True
+    ).all()
+    if not admins:
+        return jsonify({'status': 'skipped', 'reason': 'no admin users found'})
+
+    today = datetime.utcnow().strftime('%d %B %Y')
+    sent, failed = 0, []
+    for admin in admins:
+        subject = f'[VOD Ops] Weekly Plan Reminder \u2014 {today}'
+        body = (
+            f'Good morning,\n\n'
+            f'This is your Monday reminder to review the weekly operations plan.\n\n'
+            f'Key actions:\n'
+            f'  \u2022 Review open escalations and assign owners\n'
+            f'  \u2022 Check engineer leave schedule and adjust coverage\n'
+            f'  \u2022 Confirm weekend site health alerts are actioned\n'
+            f'  \u2022 Review Ruckus import data for anomalies\n\n'
+            f'Open the portal: {APP_BASE_URL}/\n\n'
+            f'-- VOD Operations Portal'
+        )
+        ok2, err2 = _send_system_email(admin.email, subject, body)
+        if ok2:
+            sent += 1
+        else:
+            failed.append({'email': admin.email, 'error': err2})
+
+    return jsonify({'status': 'success' if sent > 0 else 'failed', 'sent': sent, 'failed': failed})
+
+
+@app.route('/api/cron/email-friday-reminder', methods=['POST'])
+def cron_email_friday_reminder():
+    """Scheduled endpoint: Friday 13:00 — report due reminder to all active users."""
+    ok, *err = _verify_cron_token()
+    if not ok:
+        return err[0], err[1]
+
+    recipients = list({u.email for u in User.query.filter(User.active == True).all() if u.email})
+    if not recipients:
+        return jsonify({'status': 'skipped', 'reason': 'no recipients found'})
+
+    today = datetime.utcnow().strftime('%d %B %Y')
+    sent, failed = 0, []
+    for email in recipients:
+        subject = f'[VOD Ops] Weekly Report Due Today \u2014 {today}'
+        body = (
+            f'Reminder: the weekly report is due by end of business today ({today}).\n\n'
+            f'Please ensure:\n'
+            f'  \u2022 All service calls for the week are logged\n'
+            f'  \u2022 Ticket statistics are up to date\n'
+            f'  \u2022 Site visits are captured\n'
+            f'  \u2022 Monitoring log is complete\n'
+            f'  \u2022 Open escalations have status notes\n\n'
+            f'Submit here: {APP_BASE_URL}/reports\n\n'
+            f'-- VOD Operations Portal'
+        )
+        ok2, err2 = _send_system_email(email, subject, body)
+        if ok2:
+            sent += 1
+        else:
+            failed.append({'email': email, 'error': err2})
+
+    return jsonify({'status': 'success' if sent > 0 else 'failed', 'sent': sent, 'failed': failed})
+
+
+@app.route('/api/cron/email-monthly-summary', methods=['POST'])
+def cron_email_monthly_summary():
+    """Scheduled endpoint: 1st of month — ops summary to all active users."""
+    ok, *err = _verify_cron_token()
+    if not ok:
+        return err[0], err[1]
+
+    now = datetime.utcnow()
+    first_this_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+    first_last_month = (first_this_month - timedelta(days=1)).replace(day=1)
+    last_month_label = first_last_month.strftime('%B %Y')
+
+    tickets_total = db.session.query(
+        db.func.sum(TicketStats.tickets_handled)
+    ).filter(
+        TicketStats.date >= first_last_month,
+        TicketStats.date < first_this_month
+    ).scalar() or 0
+
+    service_calls_total = ServiceCall.query.filter(
+        ServiceCall.date >= first_last_month,
+        ServiceCall.date < first_this_month
+    ).count()
+
+    site_visits_total = SiteVisit.query.filter(
+        SiteVisit.date >= first_last_month,
+        SiteVisit.date < first_this_month
+    ).count()
+
+    aps_offline = Site.query.filter(Site.aps_offline > 0, Site.active == True).count()
+    total_sites = Site.query.filter_by(active=True).count()
+
+    recipients = list({u.email for u in User.query.filter(User.active == True).all() if u.email})
+    if not recipients:
+        return jsonify({'status': 'skipped', 'reason': 'no active users found'})
+
+    sent, failed = 0, []
+    for email in recipients:
+        subject = f'[VOD Ops] Monthly Summary \u2014 {last_month_label}'
+        body = (
+            f'VOD Support \u2014 Monthly Operations Summary: {last_month_label}\n'
+            f'{"=" * 50}\n\n'
+            f'Tickets Handled:       {tickets_total}\n'
+            f'Service Calls:         {service_calls_total}\n'
+            f'Site Visits:           {site_visits_total}\n'
+            f'Sites with AP Issues:  {aps_offline} / {total_sites}\n\n'
+            f'Full detail: {APP_BASE_URL}/reports\n\n'
+            f'-- VOD Operations Portal'
+        )
+        ok2, err2 = _send_system_email(email, subject, body)
+        if ok2:
+            sent += 1
+        else:
+            failed.append({'email': email, 'error': err2})
+
+    return jsonify({'status': 'success' if sent > 0 else 'failed', 'sent': sent, 'failed': failed})
+
+
+# ============== Wallboard Mode ==============
+
+@app.route('/wallboard')
+@login_required
+def wallboard():
+    """Office TV wallboard \u2014 full-screen live operations display (auto-refreshes every 60s)."""
+    now = datetime.utcnow()
+    today = now.date()
+
+    total_sites = Site.query.filter_by(active=True).count()
+    sites_healthy = Site.query.filter(Site.active == True, Site.aps_offline == 0).count()
+    total_aps = db.session.query(db.func.sum(Site.total_aps)).filter(Site.active == True).scalar() or 0
+    total_offline = db.session.query(db.func.sum(Site.aps_offline)).filter(Site.active == True).scalar() or 0
+    health_pct = round((sites_healthy / total_sites * 100) if total_sites else 0)
+
+    total_engineers = Agent.query.filter_by(active=True).count()
+    approved_today = LeaveRequest.query.filter(
+        LeaveRequest.status == 'approved',
+        LeaveRequest.start_date <= today,
+        LeaveRequest.end_date >= today
+    ).count()
+    engineers_on_duty = max(total_engineers - approved_today, 0)
+
+    week_start = today - timedelta(days=today.weekday())
+    escalated_this_week = db.session.query(
+        db.func.sum(TicketStats.tickets_escalated)
+    ).filter(
+        TicketStats.date >= week_start,
+        TicketStats.date <= today
+    ).scalar() or 0
+
+    tickets_today = db.session.query(
+        db.func.sum(TicketStats.tickets_handled)
+    ).filter(
+        TicketStats.date == today
+    ).scalar() or 0
+
+    return render_template(
+        'wallboard.html',
+        health_pct=health_pct,
+        sites_healthy=sites_healthy,
+        total_sites=total_sites,
+        total_aps=total_aps,
+        total_offline=int(total_offline),
+        engineers_on_duty=engineers_on_duty,
+        total_engineers=total_engineers,
+        escalated_this_week=int(escalated_this_week),
+        tickets_today=int(tickets_today),
+        now=now,
+        refresh_seconds=60,
+    )
+
 # ============== Initialize ==============
 
 def _is_postgres():
@@ -3333,6 +3678,9 @@ def _run_sqlite_migrations(conn):
         if 'created_by' not in u_cols:
             conn.execute(_text('ALTER TABLE app_user ADD COLUMN created_by INTEGER'))
             conn.commit()
+        if 'last_login' not in u_cols:
+            conn.execute(_text('ALTER TABLE app_user ADD COLUMN last_login TIMESTAMP'))
+            conn.commit()
     except Exception:
         conn.commit()
 
@@ -3357,6 +3705,9 @@ def _run_postgres_migrations(conn):
         conn.commit()
     if not _col_exists('app_user', 'created_by'):
         conn.execute(_text('ALTER TABLE app_user ADD COLUMN created_by INTEGER'))
+        conn.commit()
+    if not _col_exists('app_user', 'last_login'):
+        conn.execute(_text('ALTER TABLE app_user ADD COLUMN last_login TIMESTAMP'))
         conn.commit()
 
 def init_db():
@@ -3393,13 +3744,106 @@ def init_db():
             db.session.commit()
             print(f"  Added {Site.query.count()} assigned sites")
 
-        # Create default admin user
-        if not User.query.filter_by(email='admin@test.com').first():
-            admin = User(email='admin@test.com', role='superadmin')
-            admin.set_password('Admin123!')
+        # Create initial superadmin only if NO users exist at all.
+        # This runs once on a brand-new database and is intentionally generic
+        # so the operator immediately changes it after first login.
+        if User.query.count() == 0:
+            admin = User(email='admin@vodacom.co.za', role='superadmin')
+            admin.set_password('ChangeMe@2026!')
             db.session.add(admin)
             db.session.commit()
-            print("  Created test admin user: admin@test.com")
+            print("  Created initial superadmin: admin@vodacom.co.za  (change password immediately)")
+
+
+# ============== CLI Commands ==============
+import click
+
+
+@app.cli.command('create-user')
+@click.argument('email')
+@click.argument('role', default='viewer')
+@click.option('--password', prompt=True, hide_input=True, confirmation_prompt=True)
+def create_user_cmd(email, role, password):
+    """Create or update an application user.
+
+    ROLE: superadmin | admin | viewer  (default: viewer)
+
+    Examples:
+
+        flask create-user chris@vod.co.za superadmin
+
+        flask create-user luke@vod.co.za admin
+
+        flask create-user mgmt@vod.co.za viewer
+    """
+    if role not in ('superadmin', 'admin', 'viewer'):
+        click.echo(f'Error: role must be superadmin, admin, or viewer. Got: {role}', err=True)
+        raise SystemExit(1)
+    existing = User.query.filter_by(email=email).first()
+    if existing:
+        existing.set_password(password)
+        existing.role = role
+        existing.active = True
+        db.session.commit()
+        click.echo(f'Updated:  {email}  ({role})')
+    else:
+        user = User(email=email, role=role)
+        user.set_password(password)
+        db.session.add(user)
+        db.session.commit()
+        click.echo(f'Created:  {email}  ({role})')
+
+
+@app.cli.command('seed-users')
+def seed_users_cmd():
+    """Seed production users from the SEED_USERS environment variable.
+
+    Format (comma-separated triples):
+
+        SEED_USERS=email:password:role,email2:password2:role2
+
+    Roles: superadmin | admin | viewer
+
+    Example:
+
+        SEED_USERS=chris@vod.co.za:SecurePass1:superadmin,luke@vod.co.za:SecurePass2:admin \\\
+            flask seed-users
+    """
+    spec = os.environ.get('SEED_USERS', '').strip()
+    if not spec:
+        click.echo('SEED_USERS env var is not set \u2014 nothing to seed.', err=True)
+        return
+
+    created, updated = 0, 0
+    for entry in spec.split(','):
+        entry = entry.strip()
+        if not entry:
+            continue
+        parts = entry.split(':')
+        if len(parts) < 3:
+            click.echo(f'Skipping malformed entry (need email:password:role): {entry}', err=True)
+            continue
+        email, password, role = parts[0].strip(), parts[1].strip(), parts[2].strip()
+        if role not in ('superadmin', 'admin', 'viewer'):
+            click.echo(f'Skipping {email}: invalid role \'{role}\'', err=True)
+            continue
+        existing = User.query.filter_by(email=email).first()
+        if existing:
+            existing.set_password(password)
+            existing.role = role
+            existing.active = True
+            db.session.commit()
+            click.echo(f'Updated:  {email}  ({role})')
+            updated += 1
+        else:
+            user = User(email=email, role=role)
+            user.set_password(password)
+            db.session.add(user)
+            db.session.commit()
+            click.echo(f'Created:  {email}  ({role})')
+            created += 1
+
+    click.echo(f'\nDone \u2014 Created: {created}, Updated: {updated}')
 
 
 # Initialize DB on import (required for gunicorn)
@@ -3407,7 +3851,7 @@ init_db()
 
 if __name__ == '__main__':
     print("\n" + "="*60)
-    print("  VOD Support Report Tracker v2.0")
+    print("  VOD Operations Portal v2.0")
     print("="*60)
     print("\n  Access: http://localhost:5000")
     print("  Press Ctrl+C to stop")

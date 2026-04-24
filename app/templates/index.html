@@ -1,259 +1,532 @@
-{% extends 'base.html' %}
-{% block title %}Dashboard - VOD Report Tracker{% endblock %}
+﻿{% extends 'base.html' %}
+{% block title %}Operations Dashboard &ndash; {{ APP_NAME }}{% endblock %}
 
 {% block content %}
-<h2 class="mb-4"><i class="bi bi-speedometer2"></i> Dashboard</h2>
+<!-- ═══════════════════════════════════════════════════════
+     EXECUTIVE DASHBOARD
+     ═══════════════════════════════════════════════════════ -->
+<style>
+    /* Dashboard-specific styles */
+    .dash-page-title {
+        font-size: 1.3rem;
+        font-weight: 700;
+        color: #2a2f33;
+        margin-bottom: 4px;
+    }
+    .dash-subtitle {
+        color: #666;
+        font-size: 0.82rem;
+        margin-bottom: 20px;
+    }
 
-<!-- Health Overview Cards -->
-<div class="row mb-4">
-    <div class="col-md-3">
-        <div class="card stat-card success">
-            <div class="number">{{ health_summary.healthy }}</div>
-            <div class="label"><span class="health-dot healthy"></span>Healthy Sites</div>
-        </div>
+    /* KPI Hero Cards */
+    .kpi-card {
+        background: #ffffff;
+        border-radius: 10px;
+        border: 1px solid #e8e8e8;
+        border-top: 4px solid #f7c443;
+        box-shadow: 0 2px 12px rgba(0,0,0,0.06);
+        padding: 20px 22px;
+        display: flex;
+        align-items: center;
+        gap: 16px;
+        transition: box-shadow 0.2s, transform 0.2s;
+    }
+    .kpi-card:hover {
+        box-shadow: 0 6px 24px rgba(0,0,0,0.1);
+        transform: translateY(-2px);
+    }
+    .kpi-card.kpi-critical { border-top-color: #e74c3c; }
+    .kpi-card.kpi-success  { border-top-color: #27ae60; }
+    .kpi-card.kpi-info     { border-top-color: #546e7a; }
+    .kpi-icon {
+        width: 52px; height: 52px;
+        border-radius: 12px;
+        display: flex; align-items: center; justify-content: center;
+        font-size: 1.5rem; flex-shrink: 0;
+    }
+    .kpi-icon.gold     { background: rgba(247,196,67,0.15); color: #d4a52e; }
+    .kpi-icon.red      { background: rgba(231,76,60,0.12);  color: #e74c3c; }
+    .kpi-icon.green    { background: rgba(39,174,96,0.12);  color: #27ae60; }
+    .kpi-icon.slate    { background: rgba(84,110,122,0.12); color: #546e7a; }
+    .kpi-body { flex: 1; min-width: 0; }
+    .kpi-number {
+        font-size: 2rem;
+        font-weight: 800;
+        color: #2a2f33;
+        line-height: 1;
+        margin-bottom: 3px;
+    }
+    .kpi-number .kpi-denom {
+        font-size: 1rem;
+        font-weight: 500;
+        color: #999;
+    }
+    .kpi-label {
+        font-size: 0.78rem;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #888;
+        font-weight: 600;
+    }
+    .kpi-sub {
+        font-size: 0.72rem;
+        color: #aaa;
+        margin-top: 2px;
+    }
+    /* Pulse dot for critical */
+    .pulse-dot {
+        display: inline-block;
+        width: 10px; height: 10px;
+        border-radius: 50%;
+        background: #e74c3c;
+        animation: pulse 1.2s infinite;
+        margin-right: 5px;
+    }
+
+    /* Panel cards */
+    .panel {
+        background: #fff;
+        border-radius: 10px;
+        border: 1px solid #e8e8e8;
+        box-shadow: 0 1px 8px rgba(0,0,0,0.05);
+        overflow: hidden;
+    }
+    .panel-header {
+        background: #2a2f33;
+        color: #fff;
+        padding: 11px 16px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 2px solid #f7c443;
+    }
+    .panel-header i { color: #f7c443; margin-right: 7px; }
+    .panel-header a { color: rgba(255,255,255,0.65); font-size:0.72rem; text-decoration:none; }
+    .panel-header a:hover { color: #f7c443; }
+    .panel-body { padding: 0; }
+
+    /* Site health table */
+    .site-row { padding: 9px 16px; border-bottom: 1px solid #f5f5f5; display:flex; align-items:center; gap:10px; }
+    .site-row:last-child { border-bottom: none; }
+    .site-row:hover { background: #fffbef; }
+    .site-name { flex: 1; font-size: 0.86rem; font-weight: 500; color: #2a2f33; }
+    .site-aps { font-size: 0.78rem; color: #888; white-space:nowrap; }
+    .status-pill {
+        font-size: 0.7rem; font-weight: 700; padding: 3px 9px;
+        border-radius: 20px; text-transform: uppercase; letter-spacing: 0.04em;
+    }
+    .status-pill.healthy  { background: #e8f8ee; color: #27ae60; }
+    .status-pill.warning  { background: #fff8e1; color: #e67e22; }
+    .status-pill.critical { background: #fdecea; color: #e74c3c; }
+    .status-pill.unknown  { background: #f0f0f0; color: #999; }
+
+    /* Activity feed */
+    .activity-item { padding: 10px 16px; border-bottom: 1px solid #f5f5f5; display:flex; gap:12px; }
+    .activity-item:last-child { border-bottom:none; }
+    .activity-avatar {
+        width: 34px; height: 34px; border-radius: 50%; flex-shrink:0;
+        background: #2a2f33; color: #f7c443;
+        display:flex; align-items:center; justify-content:center;
+        font-size: 0.8rem; font-weight: 700;
+    }
+    .activity-content { flex:1; }
+    .activity-name { font-size: 0.84rem; font-weight: 600; color: #2a2f33; }
+    .activity-detail { font-size: 0.78rem; color: #666; margin-top: 2px; }
+    .activity-badge { font-size: 0.68rem; padding: 2px 7px; border-radius: 12px; font-weight:600; }
+
+    /* Insight tiles */
+    .insight-tile {
+        background: #fff;
+        border-radius: 10px;
+        border: 1px solid #e8e8e8;
+        box-shadow: 0 1px 6px rgba(0,0,0,0.05);
+        overflow: hidden;
+        height: 100%;
+    }
+    .insight-header {
+        background: #f5f5f5;
+        padding: 9px 14px;
+        font-size: 0.75rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: #555;
+        border-bottom: 1px solid #e8e8e8;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+    }
+    .insight-header i { color: #f7c443; }
+    .insight-body { padding: 14px; }
+
+    /* Trend sparkline */
+    .trend-bars { display:flex; gap:6px; align-items:flex-end; height:60px; margin-bottom:6px; }
+    .trend-bar-wrap { flex:1; display:flex; flex-direction:column; align-items:center; gap:4px; }
+    .trend-bar {
+        width: 100%; border-radius: 4px 4px 0 0;
+        background: #f7c443;
+        transition: height 0.4s;
+        min-height: 4px;
+    }
+    .trend-bar.empty { background: #e8e8e8; }
+    .trend-label { font-size: 0.62rem; color: #aaa; text-align:center; }
+    .trend-value { font-size: 0.72rem; font-weight:700; color:#2a2f33; text-align:center; }
+
+    /* Leave / Escalation counters */
+    .insight-stat { display:flex; justify-content:space-between; align-items:center; padding: 7px 0; border-bottom: 1px solid #f5f5f5; }
+    .insight-stat:last-child { border-bottom:none; }
+    .insight-stat-label { font-size:0.82rem; color:#555; }
+    .insight-stat-val { font-size:0.95rem; font-weight:700; color:#2a2f33; }
+    .insight-stat-val.red  { color: #e74c3c; }
+    .insight-stat-val.gold { color: #d4a52e; }
+    .insight-stat-val.green{ color: #27ae60; }
+
+    /* Action Center */
+    .action-btn {
+        display: flex; align-items: center; gap: 10px;
+        background: #fff; border: 1px solid #e0e0e0;
+        border-radius: 8px; padding: 11px 16px;
+        text-decoration: none; color: #2a2f33;
+        font-size: 0.84rem; font-weight: 600;
+        transition: all 0.18s;
+    }
+    .action-btn i { color: #f7c443; font-size: 1.1rem; width: 22px; text-align:center; }
+    .action-btn:hover {
+        background: #2a2f33; color: #f7c443;
+        border-color: #2a2f33;
+        transform: translateY(-1px);
+        box-shadow: 0 4px 14px rgba(0,0,0,0.12);
+    }
+    .action-btn:hover i { color: #f7c443; }
+    .action-btn small { font-weight:400; color: inherit; opacity:0.65; font-size:0.72rem; display:block; }
+</style>
+
+<!-- Page title bar -->
+<div class="d-flex justify-content-between align-items-start mb-3">
+    <div>
+        <div class="dash-page-title"><i class="bi bi-speedometer2 me-2" style="color:#f7c443;"></i>Operations Dashboard</div>
+        <div class="dash-subtitle">Week ending {{ week_ending }} &nbsp;&mdash;&nbsp; Live operational status</div>
     </div>
-    <div class="col-md-3">
-        <div class="card stat-card" style="color: #f39c12;">
-            <div class="number" style="color: #f39c12;">{{ health_summary.warning }}</div>
-            <div class="label"><span class="health-dot warning"></span>Warning</div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card stat-card warning">
-            <div class="number">{{ health_summary.critical }}</div>
-            <div class="label"><span class="health-dot critical"></span>Critical</div>
-        </div>
-    </div>
-    <div class="col-md-3">
-        <div class="card stat-card">
-            <div class="number">{{ total_tickets_today }}</div>
-            <div class="label"><i class="bi bi-ticket"></i> Tickets Today</div>
-        </div>
+    <div class="d-flex gap-2">
+        <a href="{{ url_for('site_health') }}" class="btn btn-sm btn-primary">
+            <i class="bi bi-heart-pulse"></i> Full Health View
+        </a>
+        <a href="{{ url_for('reports') }}" class="btn btn-sm btn-secondary">
+            <i class="bi bi-file-earmark-text"></i> Reports
+        </a>
     </div>
 </div>
 
-<!-- Quick Actions -->
-<div class="row mb-4">
-    <div class="col-md-3">
-        <a href="{{ url_for('import_ruckus') }}" class="quick-action">
-            <i class="bi bi-cloud-upload-fill"></i>
-            <div>Import Ruckus Data</div>
-            <small class="text-muted">Upload CSV/JSON</small>
-        </a>
-    </div>
-    <div class="col-md-3">
-        <a href="{{ url_for('add_site_visit') }}" class="quick-action">
-            <i class="bi bi-geo-alt-fill"></i>
-            <div>Log Site Visit</div>
-            <small class="text-muted">Manual entry</small>
-        </a>
-    </div>
-    <div class="col-md-3">
-        <a href="{{ url_for('add_tickets') }}" class="quick-action">
-            <i class="bi bi-ticket-fill"></i>
-            <div>Add Tickets</div>
-            <small class="text-muted">Freshdesk stats</small>
-        </a>
-    </div>
-    <div class="col-md-3">
-        <a href="{{ url_for('generate_report') }}" class="quick-action">
-            <i class="bi bi-file-earmark-plus-fill"></i>
-            <div>Generate Reports</div>
-            <small class="text-muted">Week ending {{ week_ending }}</small>
-        </a>
-    </div>
-</div>
-
-<div class="row">
-    <!-- Sites Needing Attention -->
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-exclamation-triangle"></i> Sites Needing Attention</span>
-                <a href="{{ url_for('site_health') }}" class="btn btn-sm btn-outline-primary">View All</a>
+<!-- ── KPI Hero Row ─────────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+    <!-- Sites Healthy -->
+    <div class="col-6 col-md-3">
+        <div class="kpi-card kpi-success">
+            <div class="kpi-icon green"><i class="bi bi-broadcast"></i></div>
+            <div class="kpi-body">
+                <div class="kpi-number">
+                    {{ health_summary.healthy }}<span class="kpi-denom"> / {{ total_sites }}</span>
+                </div>
+                <div class="kpi-label">Sites Healthy</div>
+                <div class="kpi-sub">{{ health_summary.warning }} warning · {{ health_summary.critical }} critical</div>
             </div>
-            <div class="card-body">
-                {% if attention_sites %}
+        </div>
+    </div>
+    <!-- Critical Alerts -->
+    <div class="col-6 col-md-3">
+        <div class="kpi-card {{ 'kpi-critical' if health_summary.critical > 0 else '' }}">
+            <div class="kpi-icon {{ 'red' if health_summary.critical > 0 else 'slate' }}">
+                {% if health_summary.critical > 0 %}
+                    <i class="bi bi-exclamation-triangle"></i>
+                {% else %}
+                    <i class="bi bi-shield-check"></i>
+                {% endif %}
+            </div>
+            <div class="kpi-body">
+                <div class="kpi-number">
+                    {% if health_summary.critical > 0 %}<span class="pulse-dot"></span>{% endif %}{{ health_summary.critical }}
+                </div>
+                <div class="kpi-label">Critical Alerts</div>
+                <div class="kpi-sub">{{ total_aps_offline }} APs currently offline</div>
+            </div>
+        </div>
+    </div>
+    <!-- Tickets Closed -->
+    <div class="col-6 col-md-3">
+        <div class="kpi-card">
+            <div class="kpi-icon gold"><i class="bi bi-check2-circle"></i></div>
+            <div class="kpi-body">
+                <div class="kpi-number">{{ tickets_closed_this_week }}</div>
+                <div class="kpi-label">Tickets Closed This Week</div>
+                <div class="kpi-sub">This week · {{ total_tickets_today }} today</div>
+            </div>
+        </div>
+    </div>
+    <!-- Engineers Available -->
+    <div class="col-6 col-md-3">
+        <div class="kpi-card kpi-info">
+            <div class="kpi-icon slate"><i class="bi bi-people"></i></div>
+            <div class="kpi-body">
+                <div class="kpi-number">
+                    {{ engineers_available }}<span class="kpi-denom"> / {{ total_engineers }}</span>
+                </div>
+                <div class="kpi-label">Engineers Available Today</div>
+                <div class="kpi-sub">{{ leave_pending }} pending leave request{{ 's' if leave_pending != 1 else '' }}</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ── Operations Grid ─────────────────────────────────────── -->
+<div class="row g-3 mb-4">
+
+    <!-- Left: Site Health -->
+    <div class="col-lg-6">
+        <div class="panel">
+            <div class="panel-header">
+                <span><i class="bi bi-diagram-3"></i>Site Health Overview</span>
+                <a href="{{ url_for('site_health') }}">View all &rarr;</a>
+            </div>
+            <div class="panel-body">
+                {% set ns = namespace(shown=0) %}
                 <table class="table table-sm mb-0">
                     <thead>
-                        <tr><th>Site</th><th>APs</th><th>Status</th></tr>
+                        <tr>
+                            <th>Site</th>
+                            <th>APs</th>
+                            <th>Offline</th>
+                            <th>Status</th>
+                        </tr>
                     </thead>
                     <tbody>
-                        {% for s in attention_sites[:5] %}
+                        {% for s in site_status | sort(attribute='status') %}
+                        {% if ns.shown < 8 %}
+                        {% set ns.shown = ns.shown + 1 %}
                         <tr>
                             <td>
                                 <span class="health-dot {{ s.status }}"></span>
                                 {{ s.site.name }}
                             </td>
+                            <td>{{ s.total_aps }}</td>
                             <td>
-                                <span class="text-danger">{{ s.aps_offline }}</span> / {{ s.total_aps }}
+                                <span class="{{ 'text-danger fw-bold' if s.aps_offline > 0 else 'text-success' }}">{{ s.aps_offline }}</span>
                             </td>
-                            <td>
-                                <span class="badge bg-{{ 'danger' if s.status == 'critical' else 'warning' }}">
-                                    {{ s.status|capitalize }}
-                                </span>
-                            </td>
+                            <td><span class="status-pill {{ s.status }}">{{ s.status }}</span></td>
                         </tr>
+                        {% endif %}
                         {% endfor %}
                     </tbody>
                 </table>
-                {% else %}
-                <p class="text-success mb-0"><i class="bi bi-check-circle"></i> All sites healthy!</p>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-    
-    <!-- Recent Imports -->
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <i class="bi bi-clock-history"></i> Recent Data Imports
-            </div>
-            <div class="card-body">
-                {% if recent_imports %}
-                <table class="table table-sm mb-0">
-                    <thead>
-                        <tr><th>Source</th><th>Time</th><th>Matched</th><th>Status</th></tr>
-                    </thead>
-                    <tbody>
-                        {% for imp in recent_imports %}
-                        <tr>
-                            <td><i class="bi bi-{{ 'wifi' if imp.source == 'ruckus' else 'ticket' }}"></i> {{ imp.source|capitalize }}</td>
-                            <td>{{ imp.timestamp.strftime('%m/%d %H:%M') }}</td>
-                            <td>{{ imp.records_matched }}/{{ imp.records_processed }}</td>
-                            <td>
-                                <span class="badge bg-{{ 'success' if imp.status == 'success' else 'warning' }}">
-                                    {{ imp.status }}
-                                </span>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                {% else %}
-                <p class="text-muted mb-0">No imports yet. <a href="{{ url_for('import_ruckus') }}">Import Ruckus data</a></p>
-                {% endif %}
-            </div>
-        </div>
-    </div>
-</div>
-
-<!-- Data Source Quality -->
-<div class="row mt-4">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-shield-check"></i> Data Source Quality</span>
-                {% if data_quality.last_import %}
-                <small class="text-muted">Last updated {{ data_quality.last_import.strftime('%Y-%m-%d %H:%M') }}</small>
-                {% endif %}
-            </div>
-            <div class="card-body">
-                <div class="row g-3 mb-3">
-                    <div class="col-6">
-                        <div class="border rounded p-2">
-                            <small class="text-muted d-block">Import Status</small>
-                            <span class="badge bg-{{ 'success' if data_quality.import_status == 'success' else 'warning' if data_quality.import_status == 'partial' else 'secondary' }}">
-                                {{ data_quality.import_status|replace('_', ' ')|capitalize }}
-                            </span>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="border rounded p-2">
-                            <small class="text-muted d-block">Matched vs Processed</small>
-                            <strong>{{ data_quality.matched }}/{{ data_quality.processed }}</strong>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="border rounded p-2">
-                            <small class="text-muted d-block">Unmatched Zones</small>
-                            <strong class="{{ 'text-danger' if data_quality.unmatched > 0 else 'text-success' }}">{{ data_quality.unmatched }}</strong>
-                        </div>
-                    </div>
-                    <div class="col-6">
-                        <div class="border rounded p-2">
-                            <small class="text-muted d-block">Excluded Maintenance APs</small>
-                            <strong>{{ data_quality.total_excluded_aps }}</strong>
-                        </div>
-                    </div>
+                {% if site_status|length == 0 %}
+                <div class="p-4 text-center text-muted">
+                    <i class="bi bi-cloud-upload" style="font-size:2rem; color:#ddd;"></i>
+                    <p class="mt-2 mb-0">No site data yet. <a href="{{ url_for('import_ruckus') }}">Import Ruckus data</a></p>
                 </div>
-                <div>
-                    <small class="text-muted d-block mb-1">Confidence Mix</small>
-                    <span class="badge bg-success me-1">High {{ data_quality.confidence_counts.high }}</span>
-                    <span class="badge bg-warning text-dark me-1">Medium {{ data_quality.confidence_counts.medium }}</span>
-                    <span class="badge bg-secondary">Low {{ data_quality.confidence_counts.low }}</span>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-tools"></i> Known Maintenance APs</span>
-                <small class="text-muted">Excluded from scoring</small>
-            </div>
-            <div class="card-body">
-                {% if maintenance_sites %}
-                <table class="table table-sm mb-0">
-                    <thead>
-                        <tr><th>Site</th><th>Excluded</th><th>Examples</th></tr>
-                    </thead>
-                    <tbody>
-                        {% for item in maintenance_sites[:8] %}
-                        <tr>
-                            <td>{{ item.site }}</td>
-                            <td><span class="badge bg-info">{{ item.excluded_aps }}</span></td>
-                            <td>
-                                {% if item.examples %}
-                                <small class="text-muted">{{ item.examples|join(', ') }}</small>
-                                {% else %}
-                                <small class="text-muted">No sample names</small>
-                                {% endif %}
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-                {% else %}
-                <p class="text-muted mb-0">No maintenance APs detected in recent imports.</p>
                 {% endif %}
             </div>
         </div>
     </div>
-</div>
 
-<!-- Agents Section -->
-<div class="row mt-4">
-    <div class="col-12">
-        <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-people"></i> Support Engineers</span>
-                <a href="{{ url_for('agents') }}" class="btn btn-sm btn-outline-secondary">Manage</a>
+    <!-- Right: Team Activity + Recent Imports -->
+    <div class="col-lg-6 d-flex flex-column gap-3">
+
+        <!-- Team -->
+        <div class="panel">
+            <div class="panel-header">
+                <span><i class="bi bi-people-fill"></i>Team Activity</span>
+                <a href="{{ url_for('agents') }}">Manage &rarr;</a>
             </div>
-            <div class="card-body">
+            <div class="panel-body">
                 {% if agents %}
-                <div class="row">
-                    {% for agent in agents %}
-                    <div class="col-md-4 mb-3">
-                        <div class="card h-100">
-                            <div class="card-body">
-                                <h6 class="card-title">{{ agent.name }}</h6>
-                                {% if agent.email %}<small class="text-muted">{{ agent.email }}</small>{% endif %}
-                                {% if agent.freshdesk_agent_id %}
-                                <br><span class="badge bg-info">Freshdesk linked</span>
-                                {% endif %}
-                            </div>
+                {% for agent in agents %}
+                <div class="activity-item">
+                    <div class="activity-avatar">{{ agent.name[0]|upper }}</div>
+                    <div class="activity-content">
+                        <div class="activity-name">{{ agent.name }}</div>
+                        <div class="activity-detail">
+                            {% if agent.freshdesk_agent_id %}
+                            <span class="activity-badge" style="background:#e8f3ff; color:#0056b3;">
+                                <i class="bi bi-link-45deg"></i> Freshdesk linked
+                            </span>
+                            {% endif %}
+                            {% if agent.email %}
+                            <span class="text-muted" style="font-size:0.72rem;"> {{ agent.email }}</span>
+                            {% endif %}
                         </div>
+                    </div>
+                    {% if agent.active %}
+                    <span class="activity-badge" style="background:#e8f8ee; color:#27ae60;">Active</span>
+                    {% endif %}
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="p-3 text-muted text-center" style="font-size:0.84rem;">
+                    No agents configured. <a href="{{ url_for('agents') }}">Add agents</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Recent Imports -->
+        <div class="panel">
+            <div class="panel-header">
+                <span><i class="bi bi-cloud-arrow-down"></i>Recent Data Imports</span>
+            </div>
+            <div class="panel-body">
+                {% if recent_imports %}
+                {% for imp in recent_imports[:4] %}
+                <div class="site-row">
+                    <div class="site-name" style="font-size:0.8rem;">
+                        <i class="bi bi-{{ 'wifi' if imp.source == 'ruckus' else 'ticket' }}" style="color:#f7c443;"></i>
+                        {{ imp.source|capitalize }}
+                    </div>
+                    <div class="site-aps">{{ imp.timestamp.strftime('%d %b %H:%M') }}</div>
+                    <span class="status-pill {{ 'healthy' if imp.status == 'success' else 'warning' }}">
+                        {{ imp.status }}
+                    </span>
+                </div>
+                {% endfor %}
+                {% else %}
+                <div class="p-3 text-muted text-center" style="font-size:0.82rem;">
+                    No imports yet. <a href="{{ url_for('import_ruckus') }}">Import now</a>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+    </div>
+</div>
+
+<!-- ── Management Insights Row ────────────────────────────── -->
+<div class="row g-3 mb-4">
+
+    <!-- Weekly Ticket Trend -->
+    <div class="col-md-4">
+        <div class="insight-tile">
+            <div class="insight-header"><i class="bi bi-graph-up"></i>Weekly Ticket Trend</div>
+            <div class="insight-body">
+                {% set max_val = ticket_trend | map(attribute='closed') | max %}
+                {% set max_val = max_val if max_val > 0 else 1 %}
+                <div class="trend-bars">
+                    {% for week in ticket_trend %}
+                    <div class="trend-bar-wrap">
+                        <div class="trend-value">{{ week.closed }}</div>
+                        <div class="trend-bar {{ 'empty' if week.closed == 0 else '' }}"
+                             style="height:{{ ((week.closed / max_val) * 48)|int }}px;"></div>
+                        <div class="trend-label">{{ week.week }}</div>
                     </div>
                     {% endfor %}
                 </div>
-                {% else %}
-                <p class="text-muted mb-0">No agents configured. <a href="{{ url_for('add_agent') }}">Add agents</a></p>
+                <div style="font-size:0.72rem; color:#aaa; text-align:right; margin-top:4px;">Tickets closed by week</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leave Overview -->
+    <div class="col-md-4">
+        <div class="insight-tile">
+            <div class="insight-header"><i class="bi bi-calendar-check"></i>Leave Overview</div>
+            <div class="insight-body">
+                <div class="insight-stat">
+                    <span class="insight-stat-label"><i class="bi bi-hourglass-split me-1"></i>Pending Requests</span>
+                    <span class="insight-stat-val {{ 'gold' if leave_pending > 0 else '' }}">{{ leave_pending }}</span>
+                </div>
+                <div class="insight-stat">
+                    <span class="insight-stat-label"><i class="bi bi-check-circle me-1"></i>Currently Approved</span>
+                    <span class="insight-stat-val green">{{ leave_approved }}</span>
+                </div>
+                <div class="insight-stat">
+                    <span class="insight-stat-label"><i class="bi bi-people me-1"></i>Team Size</span>
+                    <span class="insight-stat-val">{{ agents|length }}</span>
+                </div>
+                <div class="mt-3">
+                    <a href="{{ url_for('leave_requests') }}" class="btn btn-sm btn-primary w-100">
+                        <i class="bi bi-person-workspace"></i> Manage Leave
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Escalations / Data Quality -->
+    <div class="col-md-4">
+        <div class="insight-tile">
+            <div class="insight-header"><i class="bi bi-exclamation-triangle"></i>Operational Flags</div>
+            <div class="insight-body">
+                <div class="insight-stat">
+                    <span class="insight-stat-label"><i class="bi bi-arrow-up-circle me-1"></i>Escalated This Week</span>
+                    <span class="insight-stat-val {{ 'red' if escalated_this_week > 0 else 'green' }}">{{ escalated_this_week }}</span>
+                </div>
+                <div class="insight-stat">
+                    <span class="insight-stat-label"><i class="bi bi-wifi-off me-1"></i>APs Currently Offline</span>
+                    <span class="insight-stat-val {{ 'red' if total_aps_offline > 0 else 'green' }}">{{ total_aps_offline }}</span>
+                </div>
+                <div class="insight-stat">
+                    <span class="insight-stat-label"><i class="bi bi-shield-exclamation me-1"></i>Critical Sites</span>
+                    <span class="insight-stat-val {{ 'red' if health_summary.critical > 0 else 'green' }}">{{ health_summary.critical }}</span>
+                </div>
+                {% if health_summary.critical > 0 %}
+                <div class="mt-3">
+                    <a href="{{ url_for('site_health') }}" class="btn btn-sm btn-primary w-100">
+                        <i class="bi bi-heart-pulse"></i> View Critical Sites
+                    </a>
+                </div>
                 {% endif %}
             </div>
         </div>
     </div>
 </div>
+
+<!-- ── Quick Action Center ─────────────────────────────────── -->
+<div class="panel mb-2">
+    <div class="panel-header">
+        <span><i class="bi bi-lightning-charge-fill"></i>Quick Actions</span>
+    </div>
+    <div class="panel-body p-3">
+        <div class="row g-2">
+            <div class="col-6 col-sm-4 col-md-2">
+                <a href="{{ url_for('generate_report') }}" class="action-btn">
+                    <i class="bi bi-file-earmark-plus"></i>
+                    <div>Create Report<small>Week ending {{ week_ending }}</small></div>
+                </a>
+            </div>
+            <div class="col-6 col-sm-4 col-md-2">
+                <a href="{{ url_for('import_ruckus') }}" class="action-btn">
+                    <i class="bi bi-cloud-upload"></i>
+                    <div>Import Ruckus<small>Upload CSV / JSON</small></div>
+                </a>
+            </div>
+            <div class="col-6 col-sm-4 col-md-2">
+                <a href="{{ url_for('add_site_visit') }}" class="action-btn">
+                    <i class="bi bi-geo-alt-fill"></i>
+                    <div>Log Site Visit<small>Manual entry</small></div>
+                </a>
+            </div>
+            <div class="col-6 col-sm-4 col-md-2">
+                <a href="{{ url_for('leave_requests') }}" class="action-btn">
+                    <i class="bi bi-calendar-plus"></i>
+                    <div>Leave Request<small>Submit or review</small></div>
+                </a>
+            </div>
+            <div class="col-6 col-sm-4 col-md-2">
+                <a href="{{ url_for('tickets') }}" class="action-btn">
+                    <i class="bi bi-exclamation-triangle"></i>
+                    <div>Escalate Issue<small>Open tickets queue</small></div>
+                </a>
+            </div>
+            <div class="col-6 col-sm-4 col-md-2">
+                <a href="{{ url_for('duty_roster') }}" class="action-btn">
+                    <i class="bi bi-file-earmark-spreadsheet"></i>
+                    <div>Export Roster<small>Duty roster view</small></div>
+                </a>
+            </div>
+        </div>
+    </div>
+</div>
+
 {% endblock %}

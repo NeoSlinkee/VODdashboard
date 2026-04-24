@@ -1,5 +1,5 @@
-{% extends 'base.html' %}
-{% block title %}Settings - VOD Report Tracker{% endblock %}
+﻿{% extends 'base.html' %}
+{% block title %}Settings - {{ APP_NAME }}{% endblock %}
 
 {% block content %}
 <h2 class="mb-4"><i class="bi bi-gear"></i> Settings</h2>
@@ -282,4 +282,69 @@
         </div>
     </div>
 </div>
+
+<!-- ===== Company Branding ===== -->
+<h4 class="mt-5 mb-3"><i class="bi bi-palette"></i> Company Branding</h4>
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header"><i class="bi bi-type"></i> App Identity</div>
+            <div class="card-body">
+                <form method="POST" action="{{ url_for('settings') }}" enctype="multipart/form-data">
+                    <input type="hidden" name="section" value="branding">
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Application Name</label>
+                        <input type="text" name="app_name" class="form-control"
+                               value="{{ config.get('app_name', 'VOD Operations Portal') }}"
+                               placeholder="VOD Operations Portal">
+                        <div class="form-text">Displayed in the navbar, login page, and browser tab.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Company Name</label>
+                        <input type="text" name="company_name" class="form-control"
+                               value="{{ config.get('company_name', 'Vodacom') }}"
+                               placeholder="Vodacom">
+                        <div class="form-text">Used in the footer and exported report headers.</div>
+                    </div>
+
+                    <div class="mb-3">
+                        <label class="form-label fw-semibold">Company Logo</label>
+                        {% if config.get('app_logo') %}
+                        <div class="mb-2 p-2 border rounded d-inline-block bg-light">
+                            <img src="{{ config['app_logo'] }}" style="max-height:50px; max-width:160px; object-fit:contain;" alt="Current logo">
+                        </div>
+                        <div class="form-check mb-2">
+                            <input class="form-check-input" type="checkbox" name="remove_logo" id="remove_logo" value="1">
+                            <label class="form-check-label text-danger small" for="remove_logo">Remove current logo</label>
+                        </div>
+                        {% endif %}
+                        <input type="file" name="app_logo" class="form-control" accept="image/png,image/jpeg,image/jpg,image/svg+xml">
+                        <div class="form-text">PNG, JPG or SVG &mdash; max 500 KB. Shown in navbar, login page, and printed reports.</div>
+                    </div>
+
+                    <button type="submit" class="btn btn-primary">
+                        <i class="bi bi-save"></i> Save Branding
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card bg-light">
+            <div class="card-body">
+                <h6><i class="bi bi-info-circle"></i> Branding Tips</h6>
+                <ul class="small mb-0">
+                    <li>Logo is stored securely in the database &mdash; survives redeploys.</li>
+                    <li>SVG format recommended for crisp rendering at any size.</li>
+                    <li>If using PNG/JPG, minimum 200px wide recommended.</li>
+                    <li>Changes take effect immediately on next page load.</li>
+                    <li>Logo appears in the top-left navbar, the login screen, and all printed/PDF reports.</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
+

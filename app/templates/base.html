@@ -1,185 +1,354 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}Report Tracker{% endblock %}</title>
+    <title>{% block title %}{{ APP_NAME }}{% endblock %}</title>
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
     <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.0/font/bootstrap-icons.css" rel="stylesheet">
     <style>
+        /* VOD Brand Palette */
         :root {
-            --primary-color: #2c3e50;
-            --accent-color: #3498db;
+            --vod-gold:        #f7c443;
+            --vod-gold-dark:   #d4a52e;
+            --vod-charcoal:    #2a2f33;
+            --vod-charcoal-dk: #1e2326;
+            --success-color:   #27ae60;
+            --warning-color:   #f39c12;
+            --danger-color:    #e74c3c;
+            --border-color:    #d9d9d9;
+            --text-secondary:  #666666;
         }
         body {
-            background-color: #f8f9fa;
+            background-color: #f5f5f5;
+            font-size: 0.92rem;
+            color: #1e2326;
+            margin: 0;
+            min-height: 100vh;
         }
         .navbar {
-            background: linear-gradient(135deg, var(--primary-color), #34495e);
+            background: var(--vod-charcoal);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.35);
+            border-bottom: 2px solid var(--vod-gold);
+            min-height: 70px;
+            padding: 0 14px;
+        }
+        .navbar-brand {
+            font-weight: 700;
+            font-size: 1.1rem;
+            letter-spacing: 0.02em;
+            color: #ffffff !important;
+        }
+        .navbar-brand img.brand-logo {
+            height: 32px;
+            width: auto;
+            margin-right: 8px;
+            object-fit: contain;
+            vertical-align: middle;
+        }
+        .navbar .navbar-text { color: rgba(255,255,255,0.55) !important; }
+        .navbar .btn-outline-light {
+            border-color: rgba(255,255,255,0.35);
+            color: rgba(255,255,255,0.8);
+        }
+        .navbar .btn-outline-light:hover {
+            background: var(--vod-gold);
+            border-color: var(--vod-gold);
+            color: var(--vod-charcoal);
+            font-weight: 600;
+        }
+        .app-shell {
+            display: flex;
+            min-height: calc(100vh - 70px);
         }
         .sidebar {
-            background: white;
-            min-height: calc(100vh - 56px);
-            box-shadow: 2px 0 5px rgba(0,0,0,0.1);
+            background: #1f2326;
+            width: 250px;
+            min-width: 250px;
+            min-height: calc(100vh - 70px);
+            box-shadow: 2px 0 8px rgba(0,0,0,0.2);
+            overflow-y: auto;
+        }
+        .sidebar hr { border-color: rgba(255,255,255,0.08); margin: 4px 12px; }
+        .sidebar small.text-muted {
+            font-size: 0.68rem;
+            letter-spacing: 0.09em;
+            color: rgba(255,255,255,0.3) !important;
+            padding-left: 18px;
+            display: block;
+            padding-top: 6px;
         }
         .sidebar .nav-link {
-            color: #555;
-            padding: 12px 20px;
+            color: rgba(255,255,255,0.65);
+            padding: 9px 18px;
             border-left: 3px solid transparent;
+            font-size: 0.86rem;
+            transition: all 0.15s;
         }
         .sidebar .nav-link:hover {
-            background: #f8f9fa;
-            border-left-color: var(--accent-color);
+            background: rgba(247,196,67,0.1);
+            border-left-color: var(--vod-gold);
+            color: var(--vod-gold);
         }
         .sidebar .nav-link.active {
-            background: #e8f4fc;
-            border-left-color: var(--accent-color);
-            color: var(--accent-color);
+            background: rgba(247,196,67,0.15);
+            border-left-color: var(--vod-gold);
+            color: var(--vod-gold);
+            font-weight: 600;
         }
-        .sidebar .nav-link i {
-            margin-right: 10px;
-            width: 20px;
-        }
+        .sidebar .nav-link i { margin-right: 9px; width: 18px; opacity: 0.75; }
+        .sidebar .nav-link.active i, .sidebar .nav-link:hover i { opacity: 1; }
         .content {
-            padding: 25px;
+            padding: 18px;
+            flex: 1;
+            min-width: 0;
+        }
+        .user-chip {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            color: #fff;
+            border-left: 1px solid rgba(255,255,255,0.2);
+            padding-left: 12px;
+        }
+        .user-chip .avatar {
+            width: 34px;
+            height: 34px;
+            border-radius: 50%;
+            background: #fff;
+            color: var(--vod-charcoal);
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 0.85rem;
+        }
+        .top-icon-link {
+            color: rgba(255,255,255,0.9);
+            text-decoration: none;
+            font-size: 0.82rem;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            position: relative;
+        }
+        .top-icon-link .notif-dot {
+            position: absolute;
+            top: -6px;
+            right: -8px;
+            background: #f7c443;
+            color: #1f2326;
+            border-radius: 10px;
+            font-size: 0.62rem;
+            line-height: 1;
+            padding: 2px 4px;
+            font-weight: 700;
         }
         .card {
-            border: none;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.08);
+            border: 1px solid var(--border-color);
+            box-shadow: 0 1px 6px rgba(0,0,0,0.06);
             margin-bottom: 20px;
         }
         .card-header {
-            background: white;
-            border-bottom: 2px solid #f0f0f0;
+            background: #ffffff;
+            border-bottom: 2px solid #eee;
             font-weight: 600;
+            color: var(--vod-charcoal);
         }
         .stat-card {
             text-align: center;
             padding: 20px;
+            border-top: 3px solid var(--vod-gold) !important;
         }
         .stat-card .number {
-            font-size: 2.5rem;
+            font-size: 2.4rem;
             font-weight: 700;
-            color: var(--primary-color);
+            color: var(--vod-charcoal);
         }
         .stat-card .label {
-            color: #888;
-            font-size: 0.9rem;
-        }
-        .stat-card.warning .number { color: #e74c3c; }
-        .stat-card.success .number { color: #27ae60; }
-        .stat-card.info .number { color: #3498db; }
-        .status-healthy { color: #27ae60; }
-        .status-warning { color: #f39c12; }
-        .status-critical { color: #e74c3c; }
-        .status-unknown { color: #95a5a6; }
-        .bg-healthy { background-color: #27ae60 !important; }
-        .bg-warning-custom { background-color: #f39c12 !important; }
-        .bg-critical { background-color: #e74c3c !important; }
-        .bg-unknown { background-color: #95a5a6 !important; }
-        .health-card {
-            border-left: 4px solid;
-            transition: all 0.2s;
-        }
-        .health-card.healthy { border-left-color: #27ae60; }
-        .health-card.warning { border-left-color: #f39c12; }
-        .health-card.critical { border-left-color: #e74c3c; }
-        .health-card.unknown { border-left-color: #95a5a6; }
-        .health-dot {
-            width: 12px;
-            height: 12px;
-            border-radius: 50%;
-            display: inline-block;
-            margin-right: 8px;
-        }
-        .health-dot.healthy { background: #27ae60; }
-        .health-dot.warning { background: #f39c12; }
-        .health-dot.critical { background: #e74c3c; animation: pulse 1s infinite; }
-        .health-dot.unknown { background: #95a5a6; }
-        @keyframes pulse {
-            0%, 100% { opacity: 1; }
-            50% { opacity: 0.5; }
-        }
-        .btn-primary {
-            background: var(--accent-color);
-            border-color: var(--accent-color);
-        }
-        .table th {
-            background: #f8f9fa;
-            font-weight: 600;
+            color: var(--text-secondary);
             font-size: 0.85rem;
             text-transform: uppercase;
-            color: #666;
+            letter-spacing: 0.05em;
         }
-        .badge-status {
-            padding: 5px 10px;
-            border-radius: 20px;
-            font-size: 0.75rem;
+        .stat-card .stat-icon { color: var(--vod-gold); }
+        .stat-card.warning .number { color: var(--danger-color); }
+        .stat-card.success .number { color: var(--success-color); }
+        /* Buttons - override Bootstrap blue entirely */
+        .btn-primary, .btn-primary:visited {
+            background-color: var(--vod-gold) !important;
+            border-color: var(--vod-gold) !important;
+            color: var(--vod-charcoal) !important;
+            font-weight: 600;
         }
+        .btn-primary:hover, .btn-primary:focus, .btn-primary:active {
+            background-color: var(--vod-gold-dark) !important;
+            border-color: var(--vod-gold-dark) !important;
+            color: var(--vod-charcoal) !important;
+        }
+        .btn-secondary {
+            background-color: var(--vod-charcoal) !important;
+            border-color: var(--vod-charcoal) !important;
+            color: #ffffff !important;
+        }
+        .btn-secondary:hover {
+            background-color: var(--vod-charcoal-dk) !important;
+            border-color: var(--vod-charcoal-dk) !important;
+        }
+        .btn-outline-primary {
+            border-color: var(--vod-gold) !important;
+            color: var(--vod-charcoal) !important;
+        }
+        .btn-outline-primary:hover {
+            background-color: var(--vod-gold) !important;
+            color: var(--vod-charcoal) !important;
+        }
+        a { color: #2a5298; }
+        a:hover { color: var(--vod-gold-dark); }
+        .table th {
+            background: #f5f5f5;
+            font-weight: 600;
+            font-size: 0.78rem;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+            border-bottom: 2px solid var(--border-color);
+        }
+        .table-hover tbody tr:hover { background: #fffbef; }
+        .status-healthy  { color: var(--success-color); }
+        .status-warning  { color: var(--warning-color); }
+        .status-critical { color: var(--danger-color); }
+        .status-unknown  { color: #95a5a6; }
+        .bg-healthy        { background-color: var(--success-color) !important; }
+        .bg-warning-custom { background-color: var(--warning-color) !important; }
+        .bg-critical       { background-color: var(--danger-color) !important; }
+        .bg-unknown        { background-color: #95a5a6 !important; }
+        .health-card { border-left: 4px solid; transition: box-shadow 0.2s; }
+        .health-card.healthy  { border-left-color: var(--success-color); }
+        .health-card.warning  { border-left-color: var(--warning-color); }
+        .health-card.critical { border-left-color: var(--danger-color); }
+        .health-card.unknown  { border-left-color: #95a5a6; }
+        .health-dot { width: 11px; height: 11px; border-radius: 50%; display: inline-block; margin-right: 7px; }
+        .health-dot.healthy  { background: var(--success-color); }
+        .health-dot.warning  { background: var(--warning-color); }
+        .health-dot.critical { background: var(--danger-color); animation: pulse 1s infinite; }
+        .health-dot.unknown  { background: #95a5a6; }
+        @keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.45; } }
+        .badge-status { padding: 5px 10px; border-radius: 20px; font-size: 0.75rem; }
         .quick-action {
-            padding: 15px;
-            border-radius: 10px;
-            text-align: center;
-            background: white;
-            transition: all 0.2s;
-            text-decoration: none;
-            color: inherit;
-            display: block;
+            padding: 18px 15px; border-radius: 10px; text-align: center;
+            background: white; border: 1px solid var(--border-color);
+            transition: all 0.2s; text-decoration: none; color: inherit; display: block;
         }
         .quick-action:hover {
             transform: translateY(-3px);
-            box-shadow: 0 5px 20px rgba(0,0,0,0.15);
+            box-shadow: 0 6px 20px rgba(0,0,0,0.1);
+            border-color: var(--vod-gold);
         }
-        .quick-action i {
-            font-size: 2rem;
-            color: var(--accent-color);
-            margin-bottom: 10px;
+        .quick-action i { font-size: 1.9rem; color: var(--vod-gold); margin-bottom: 8px; }
+        .app-footer {
+            font-size: 0.72rem; color: var(--text-secondary); text-align: center;
+            padding: 10px 0 18px; margin-top: 32px; border-top: 1px solid var(--border-color);
+        }
+        .form-control:focus, .form-select:focus {
+            border-color: var(--vod-gold);
+            box-shadow: 0 0 0 0.2rem rgba(247,196,67,0.25);
+        }
+        .badge.bg-primary { background-color: var(--vod-charcoal) !important; }
+
+        @media (max-width: 991.98px) {
+            .sidebar {
+                position: fixed;
+                top: 70px;
+                left: -260px;
+                z-index: 1050;
+                transition: left 0.2s ease;
+            }
+            .sidebar.open {
+                left: 0;
+            }
+            .content {
+                width: 100%;
+            }
+            .mobile-sidebar-backdrop {
+                display: none;
+                position: fixed;
+                top: 70px;
+                left: 0;
+                right: 0;
+                bottom: 0;
+                background: rgba(0,0,0,0.4);
+                z-index: 1040;
+            }
+            .mobile-sidebar-backdrop.show {
+                display: block;
+            }
         }
     </style>
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark">
+
+    <nav class="navbar navbar-expand-lg">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('index') }}">
-                <i class="bi bi-clipboard-data"></i> Report Tracker
+            <button class="btn btn-sm btn-outline-light d-lg-none me-2" id="sidebarToggle" type="button" aria-label="Toggle menu">
+                <i class="bi bi-list"></i>
+            </button>
+            <a class="navbar-brand d-flex align-items-center" href="{{ url_for('index') }}">
+                {% if APP_LOGO %}
+                    <img src="{{ APP_LOGO }}" class="brand-logo" alt="{{ APP_NAME }} logo">
+                {% else %}
+                    <i class="bi bi-grid-3x3-gap-fill me-2" style="color:var(--vod-gold);font-size:1.3rem;"></i>
+                {% endif %}
+                {{ APP_NAME }}
             </a>
             <div class="navbar-nav ms-auto d-flex flex-row align-items-center gap-3">
-                <span class="navbar-text">
-                    <i class="bi bi-calendar3"></i> Week Ending: {{ week_ending if week_ending else 'N/A' }}
-                </span>
                 {% if current_user.is_authenticated %}
-                <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-light">
-                    <i class="bi bi-box-arrow-right"></i> Logout
+                <a href="#" class="top-icon-link d-none d-md-inline-flex" title="Alerts">
+                    <i class="bi bi-bell"></i> Alerts
+                    <span class="notif-dot">3</span>
+                </a>
+                {% if current_user.is_admin %}
+                <a href="{{ url_for('settings') }}" class="top-icon-link d-none d-md-inline-flex" title="Settings">
+                    <i class="bi bi-gear"></i>
+                </a>
+                {% endif %}
+                <div class="user-chip d-none d-lg-flex">
+                    <span class="avatar">{{ (current_user.email[:1] if current_user.email else 'U')|upper }}</span>
+                    <div style="line-height:1.1;">
+                        <div style="font-size:0.83rem; font-weight:600; color:#fff;">{{ current_user.email.split('@')[0]|capitalize if current_user.email else 'User' }}</div>
+                        <div style="font-size:0.68rem; color:rgba(255,255,255,0.65);">{{ current_user.role|capitalize }}</div>
+                    </div>
+                </div>
+                <a href="{{ url_for('logout') }}" class="btn btn-sm btn-outline-light" title="Sign out">
+                    <i class="bi bi-box-arrow-right"></i> Sign Out
                 </a>
                 {% endif %}
             </div>
         </div>
     </nav>
-    <div class="alert alert-warning text-center py-1 mb-0 rounded-0" style="font-size:0.82rem;">
-        <i class="bi bi-exclamation-triangle"></i>
-        <strong>Demo Environment</strong> – Internal Use Only
-    </div>
 
-    <div class="container-fluid">
-        <div class="row">
-            <div class="col-md-2 sidebar p-0">
-                <nav class="nav flex-column pt-3">
+    <div class="mobile-sidebar-backdrop" id="sidebarBackdrop"></div>
+    <div class="app-shell">
+            <div class="sidebar p-0" id="mainSidebar">
+                <nav class="nav flex-column pt-3 pb-4">
                     <a class="nav-link {{ 'active' if request.endpoint == 'index' else '' }}" href="{{ url_for('index') }}">
-                        <i class="bi bi-speedometer2"></i> Dashboard
+                        <i class="bi bi-speedometer2"></i> Operations Dashboard
+                    </a>
+                    <a class="nav-link {{ 'active' if request.endpoint == 'wallboard' else '' }}" href="{{ url_for('wallboard') }}" target="_blank" title="Open full-screen office display">
+                        <i class="bi bi-display"></i> Live Wallboard
                     </a>
                     <a class="nav-link {{ 'active' if request.endpoint == 'site_health' else '' }}" href="{{ url_for('site_health') }}">
                         <i class="bi bi-heart-pulse"></i> Site Health
                     </a>
-                    <hr class="mx-3">
-                    <small class="px-3 text-muted">DATA IMPORT</small>
+                    <hr>
+                    <small class="text-muted">DATA IMPORT</small>
                     <a class="nav-link {{ 'active' if 'import_ruckus' in request.endpoint else '' }}" href="{{ url_for('import_ruckus') }}">
-                        <i class="bi bi-cloud-upload"></i> Import Ruckus
+                        <i class="bi bi-cloud-upload"></i> Ruckus Import
                     </a>
                     <a class="nav-link {{ 'active' if 'ticket' in request.endpoint else '' }}" href="{{ url_for('tickets') }}">
                         <i class="bi bi-ticket"></i> Tickets
                     </a>
-                    <hr class="mx-3">
-                    <small class="px-3 text-muted">MANUAL ENTRY</small>
+                    <hr>
+                    <small class="text-muted">FIELD OPERATIONS</small>
                     <a class="nav-link {{ 'active' if request.endpoint in ('site_visits', 'add_site_visit') else '' }}" href="{{ url_for('site_visits') }}">
                         <i class="bi bi-geo-alt"></i> Site Visits
                     </a>
@@ -189,18 +358,18 @@
                     <a class="nav-link {{ 'active' if 'monitoring' in request.endpoint else '' }}" href="{{ url_for('monitoring') }}">
                         <i class="bi bi-wifi"></i> Monitoring
                     </a>
-                    <hr class="mx-3">
-                    <small class="px-3 text-muted">REPORTS</small>
+                    <hr>
+                    <small class="text-muted">REPORTS</small>
                     <a class="nav-link {{ 'active' if request.endpoint == 'reports' or 'report' in request.endpoint else '' }}" href="{{ url_for('reports') }}">
-                        <i class="bi bi-file-earmark-text"></i> Weekly Reports
+                        <i class="bi bi-file-earmark-text"></i> Operational Reports
                     </a>
                     {% if current_user.is_authenticated and current_user.is_admin %}
                     <a class="nav-link {{ 'active' if 'summary' in request.endpoint else '' }}" href="{{ url_for('weekly_summary') }}">
-                        <i class="bi bi-bar-chart"></i> Company Summary
+                        <i class="bi bi-bar-chart"></i> Executive Summary
                     </a>
                     {% endif %}
-                    <hr class="mx-3">
-                    <small class="px-3 text-muted">ROSTER & CLAIMS</small>
+                    <hr>
+                    <small class="text-muted">ROSTER &amp; CLAIMS</small>
                     <a class="nav-link {{ 'active' if 'roster' in request.endpoint else '' }}" href="{{ url_for('duty_roster') }}">
                         <i class="bi bi-calendar3"></i> Duty Roster
                     </a>
@@ -210,48 +379,93 @@
                     <a class="nav-link {{ 'active' if 'standby_claim' in request.endpoint else '' }}" href="{{ url_for('standby_claims') }}">
                         <i class="bi bi-file-earmark-ruled"></i> Standby Claims
                     </a>
-                    <hr class="mx-3">
-                    <small class="px-3 text-muted">SETTINGS</small>
+                    <hr>
+                    <small class="text-muted">CONFIGURATION</small>
                     <a class="nav-link {{ 'active' if request.endpoint in ('sites', 'add_site', 'import_sites') else '' }}" href="{{ url_for('sites') }}">
                         <i class="bi bi-building"></i> My Sites
                     </a>
                     {% if current_user.is_authenticated and current_user.is_admin %}
                     <a class="nav-link {{ 'active' if 'agent' in request.endpoint and 'admin' not in request.endpoint else '' }}" href="{{ url_for('agents') }}">
-                        <i class="bi bi-people"></i> Agents
+                        <i class="bi bi-people"></i> Team Members
                     </a>
                     <a class="nav-link {{ 'active' if 'settings' in request.endpoint else '' }}" href="{{ url_for('settings') }}">
-                        <i class="bi bi-gear"></i> Settings
+                        <i class="bi bi-gear"></i> System Settings
                     </a>
                     {% endif %}
                     <a class="nav-link {{ 'active' if 'reference' in request.endpoint else '' }}" href="{{ url_for('references') }}">
                         <i class="bi bi-folder2-open"></i> Reference Docs
                     </a>
                     {% if current_user.is_authenticated and current_user.is_admin %}
-                    <hr class="mx-3">
-                    <small class="px-3 text-muted">ADMIN</small>
+                    <hr>
+                    <small class="text-muted">ADMIN</small>
                     <a class="nav-link {{ 'active' if 'admin_user' in request.endpoint else '' }}" href="{{ url_for('admin_users') }}">
                         <i class="bi bi-shield-lock"></i> User Management
                     </a>
                     {% endif %}
                 </nav>
             </div>
-            <div class="col-md-10 content">
+
+            <div class="content d-flex flex-column" style="min-height:calc(100vh - 70px)">
                 {% with messages = get_flashed_messages(with_categories=true) %}
                     {% if messages %}
                         {% for category, message in messages %}
-                            <div class="alert alert-{{ 'success' if category == 'success' else 'info' if category == 'info' else 'warning' }} alert-dismissible fade show">
+                            <div class="alert alert-{{ 'success' if category == 'success' else 'info' if category == 'info' else 'warning' if category == 'warning' else 'danger' }} alert-dismissible fade show">
                                 {{ message }}
                                 <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
                             </div>
                         {% endfor %}
                     {% endif %}
                 {% endwith %}
-                
+
                 {% block content %}{% endblock %}
+
+                <div class="app-footer mt-auto">
+                    &copy; {{ now.year if now is defined else 2026 }} {{ COMPANY_NAME }} &mdash; Internal Operations System
+                </div>
             </div>
-        </div>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        (function () {
+            var WARN_MS  = 7 * 60 * 60 * 1000 + 45 * 60 * 1000;
+            var LIMIT_MS = 8 * 60 * 60 * 1000;
+            var t0 = Date.now();
+            function checkTimeout() {
+                var elapsed = Date.now() - t0;
+                if (elapsed >= LIMIT_MS) {
+                    window.location.href = '{{ url_for("logout") }}?reason=timeout';
+                } else if (elapsed >= WARN_MS) {
+                    if (!document.getElementById('_session_warn')) {
+                        var d = document.createElement('div');
+                        d.id = '_session_warn';
+                        d.className = 'alert alert-warning alert-dismissible fade show fixed-top mx-3 mt-2';
+                        d.style.zIndex = 9999;
+                        d.innerHTML = '<i class="bi bi-clock-history"></i> Your session will expire in 15 minutes. <a href="{{ url_for("index") }}">Click here</a> to stay signed in. <button type="button" class="btn-close" data-bs-dismiss="alert"></button>';
+                        document.body.prepend(d);
+                    }
+                }
+            }
+            setInterval(checkTimeout, 60000);
+        })();
+
+        (function () {
+            var toggle = document.getElementById('sidebarToggle');
+            var sidebar = document.getElementById('mainSidebar');
+            var backdrop = document.getElementById('sidebarBackdrop');
+            if (!toggle || !sidebar || !backdrop) return;
+
+            function closeSidebar() {
+                sidebar.classList.remove('open');
+                backdrop.classList.remove('show');
+            }
+
+            toggle.addEventListener('click', function () {
+                sidebar.classList.toggle('open');
+                backdrop.classList.toggle('show');
+            });
+            backdrop.addEventListener('click', closeSidebar);
+        })();
+    </script>
 </body>
 </html>
