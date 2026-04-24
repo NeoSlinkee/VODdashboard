@@ -17,6 +17,21 @@
                         <label class="form-label">Email</label>
                         <input type="email" name="email" class="form-control" placeholder="john.smith@company.com">
                     </div>
+                    <div class="mb-3">
+                        <label class="form-label">Roster Colour <small class="text-muted">(leave blank for auto)</small></label>
+                        <div class="d-flex align-items-center gap-2">
+                            <input type="color" name="standby_color" class="form-control form-control-color"
+                                   value="#1a73e8" id="colorPicker" style="width:48px;padding:2px;">
+                            <input type="text" id="colorHex" class="form-control" style="max-width:110px;"
+                                   placeholder="#1a73e8" maxlength="7"
+                                   oninput="document.getElementById('colorPicker').value=this.value">
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    onclick="document.getElementById('colorPicker').value='';document.getElementById('colorHex').value='';">
+                                Auto
+                            </button>
+                        </div>
+                        <div class="form-text">Colour shown on the duty roster calendar for this engineer.</div>
+                    </div>
                     <div class="d-flex gap-2">
                         <button type="submit" class="btn btn-primary">
                             <i class="bi bi-save"></i> Add Agent
@@ -27,6 +42,24 @@
             </div>
         </div>
     </div>
+</div>
+
+<script>
+document.getElementById('colorPicker').addEventListener('input', function() {
+    document.getElementById('colorHex').value = this.value;
+});
+// Sync color picker name to hex field so form submits the hex input value when "Auto" is clicked
+document.querySelector('form').addEventListener('submit', function() {
+    const hex = document.getElementById('colorHex').value.trim();
+    document.getElementById('colorPicker').value = hex || '';
+    // If blank, don't submit a color value
+    if (!hex) {
+        document.getElementById('colorPicker').removeAttribute('name');
+    }
+});
+</script>
+{% endblock %}
+
 </div>
 {% endblock %}
 

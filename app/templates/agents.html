@@ -16,6 +16,7 @@
                 <tr>
                     <th>Name</th>
                     <th>Email</th>
+                    <th>Roster Colour</th>
                     <th>Status</th>
                     <th>Added</th>
                     <th class="text-end">Actions</th>
@@ -27,6 +28,14 @@
                     <td><strong>{{ agent.name }}</strong></td>
                     <td>{{ agent.email or '-' }}</td>
                     <td>
+                        {% if agent.standby_color and agent.standby_color != '#2a2f33' %}
+                        <span style="display:inline-block;width:22px;height:22px;border-radius:4px;background:{{ agent.standby_color }};border:1px solid #ddd;vertical-align:middle;"></span>
+                        <span class="ms-1" style="font-size:0.8rem;color:#666;">{{ agent.standby_color }}</span>
+                        {% else %}
+                        <span class="text-muted" style="font-size:0.82rem;">auto</span>
+                        {% endif %}
+                    </td>
+                    <td>
                         {% if agent.active %}
                         <span class="badge bg-success">Active</span>
                         {% else %}
@@ -35,6 +44,7 @@
                     </td>
                     <td>{{ agent.created_at.strftime('%Y-%m-%d') }}</td>
                     <td class="text-end">
+                        <a href="{{ url_for('edit_agent', id=agent.id) }}" class="btn btn-sm btn-outline-primary">Edit</a>
                         <a href="{{ url_for('toggle_agent', id=agent.id) }}" class="btn btn-sm btn-outline-secondary">
                             {% if agent.active %}Deactivate{% else %}Activate{% endif %}
                         </a>
@@ -48,6 +58,9 @@
             </tbody>
         </table>
     </div>
+</div>
+{% endblock %}
+
 </div>
 {% endblock %}
 

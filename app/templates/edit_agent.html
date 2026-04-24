@@ -1,0 +1,91 @@
+{% extends 'base.html' %}
+{% block title %}Edit Agent - {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+    <h2><i class="bi bi-person-gear"></i> Edit Agent — {{ agent.name }}</h2>
+    <a href="{{ url_for('agents') }}" class="btn btn-outline-secondary">
+        <i class="bi bi-arrow-left"></i> Back
+    </a>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <form method="POST">
+                    <div class="mb-3">
+                        <label class="form-label">Name *</label>
+                        <input type="text" name="name" class="form-control" required value="{{ agent.name }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Email</label>
+                        <input type="email" name="email" class="form-control" value="{{ agent.email or '' }}">
+                    </div>
+                    <div class="mb-3">
+                        <label class="form-label">Roster Colour <small class="text-muted">(leave blank for auto)</small></label>
+                        <div class="d-flex align-items-center gap-2">
+                            {% set current_color = agent.standby_color if (agent.standby_color and agent.standby_color != '#2a2f33') else '' %}
+                            <input type="color" name="standby_color" id="colorPicker" class="form-control form-control-color"
+                                   value="{{ current_color or '#1a73e8' }}" style="width:48px;padding:2px;">
+                            <input type="text" id="colorHex" class="form-control" style="max-width:110px;"
+                                   value="{{ current_color }}" maxlength="7" placeholder="#1a73e8"
+                                   oninput="document.getElementById('colorPicker').value=this.value">
+                            <button type="button" class="btn btn-sm btn-outline-secondary"
+                                    onclick="document.getElementById('colorHex').value='';document.getElementById('colorPicker').value='#1a73e8';">
+                                Auto
+                            </button>
+                        </div>
+                        <div class="form-text">Colour shown on the duty roster calendar for this engineer.</div>
+                        {% if not current_color %}
+                        <div class="form-text text-info"><i class="bi bi-info-circle"></i> Currently using auto-assigned colour.</div>
+                        {% endif %}
+                    </div>
+                    <div class="d-flex gap-2 mt-3">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="bi bi-save"></i> Save Changes
+                        </button>
+                        <a href="{{ url_for('agents') }}" class="btn btn-outline-secondary">Cancel</a>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">Preview</div>
+            <div class="card-body text-center py-4">
+                <div id="badge-preview" style="display:inline-block;padding:6px 16px;border-radius:20px;font-weight:700;font-size:0.9rem;
+                     background:{{ current_color or '#1a73e8' }};color:#ffffff;">
+                    {{ agent.name }}
+                </div>
+                <div class="text-muted mt-2" style="font-size:0.8rem;">Roster calendar badge</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('colorPicker').addEventListener('input', function() {
+    document.getElementById('colorHex').value = this.value;
+    document.getElementById('badge-preview').style.background = this.value;
+});
+document.getElementById('colorHex').addEventListener('input', function() {
+    const v = this.value.trim();
+    if (/^#[0-9a-fA-F]{6}$/.test(v)) {
+        document.getElementById('colorPicker').value = v;
+        document.getElementById('badge-preview').style.background = v;
+    }
+});
+// Sync form submit: submit empty string if "Auto" mode
+document.querySelector('form').addEventListener('submit', function() {
+    const hex = document.getElementById('colorHex').value.trim();
+    if (!hex) {
+        document.getElementById('colorPicker').value = '';
+    } else {
+        document.getElementById('colorPicker').value = hex;
+    }
+});
+</script>
+{% endblock %}

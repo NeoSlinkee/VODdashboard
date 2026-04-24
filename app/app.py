@@ -543,16 +543,37 @@ def _build_standby_engineers_map():
 
     Returns a dict keyed by agent name — same shape the roster/standby templates
     expect — so existing template code works without changes.
+
+    Agents without a custom standby_color get one automatically from the palette
+    below, assigned in order of agent ID so colours stay stable across restarts.
     """
+    # Accessible, visually distinct colours that work on both light and dark cards
+    _PALETTE = [
+        ('#1a73e8', '#ffffff'),  # Google Blue
+        ('#e53935', '#ffffff'),  # Red
+        ('#2e7d32', '#ffffff'),  # Green
+        ('#f57c00', '#ffffff'),  # Amber/Orange
+        ('#7b1fa2', '#ffffff'),  # Purple
+        ('#00838f', '#ffffff'),  # Teal
+        ('#ad1457', '#ffffff'),  # Pink
+        ('#558b2f', '#ffffff'),  # Olive Green
+    ]
     try:
-        agents = Agent.query.filter_by(active=True, roster_enabled=True).all()
+        agents = Agent.query.filter_by(active=True, roster_enabled=True).order_by(Agent.id).all()
     except Exception:
         return {}
     result = {}
+    palette_idx = 0
     for a in agents:
+        if a.standby_color and a.standby_color != '#2a2f33':
+            color = a.standby_color
+            text  = a.standby_text_color or '#ffffff'
+        else:
+            color, text = _PALETTE[palette_idx % len(_PALETTE)]
+            palette_idx += 1
         result[a.name] = {
-            'color': a.standby_color or '#2a2f33',
-            'text':  a.standby_text_color or '#ffffff',
+            'color': color,
+            'text':  text,
             'label': a.standby_label or 'secondary',
             'start_date': a.standby_start_date.isoformat() if a.standby_start_date else '2025-01-01',
             'end_date':   a.standby_end_date.isoformat()   if a.standby_end_date   else None,
@@ -1806,6 +1827,8 @@ def add_agent():
             name=request.form['name'],
             email=request.form.get('email', ''),
             freshdesk_agent_id=request.form.get('freshdesk_agent_id'),
+            standby_color=request.form.get('standby_color') or None,
+            standby_text_color=request.form.get('standby_text_color') or '#ffffff',
             active=True
         )
         db.session.add(agent)
@@ -1813,6 +1836,21 @@ def add_agent():
         flash(f'Agent {agent.name} added.', 'success')
         return redirect(url_for('agents'))
     return render_template('add_agent.html')
+
+@app.route('/agents/<int:id>/edit', methods=['GET', 'POST'])
+@admin_required
+def edit_agent(id):
+    agent = Agent.query.get_or_404(id)
+    if request.method == 'POST':
+        agent.name = request.form['name']
+        agent.email = request.form.get('email', '')
+        agent.freshdesk_agent_id = request.form.get('freshdesk_agent_id')
+        agent.standby_color = request.form.get('standby_color') or None
+        agent.standby_text_color = request.form.get('standby_text_color') or '#ffffff'
+        db.session.commit()
+        flash(f'Agent {agent.name} updated.', 'success')
+        return redirect(url_for('agents'))
+    return render_template('edit_agent.html', agent=agent)
 
 @app.route('/agents/<int:id>/toggle')
 @admin_required
