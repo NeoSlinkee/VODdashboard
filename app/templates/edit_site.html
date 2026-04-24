@@ -4,6 +4,129 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
+    <h2><i class="bi bi-pencil-square me-2" style="color:var(--vod-gold)"></i>Edit Site</h2>
+    <p class="text-muted mb-0 small">{{ site.name }}</p>
+  </div>
+  <a href="{{ url_for('sites') }}" class="btn btn-outline-secondary btn-sm">
+    <i class="bi bi-arrow-left me-1"></i>Back to Sites
+  </a>
+</div>
+
+<div class="row">
+  <div class="col-md-7 col-lg-6">
+    <div class="card">
+      <div class="card-body">
+        <form method="POST">
+          <div class="row g-3">
+
+            <div class="col-12">
+              <label class="form-label">Site Name <span class="text-danger">*</span></label>
+              <input type="text" name="name" class="form-control" required value="{{ site.name }}">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Brand / Property Group</label>
+              <input type="text" name="brand" class="form-control"
+                     value="{{ site.brand or '' }}" placeholder="e.g., Garden Court">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">City</label>
+              <input type="text" name="city" class="form-control"
+                     value="{{ site.city or '' }}" placeholder="e.g., Sandton">
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Reach Category <span class="text-danger">*</span></label>
+              <select name="region" class="form-select" required>
+                <option value="within_reach" {% if site.region == 'within_reach' %}selected{% endif %}>Within Reach</option>
+                <option value="far_reach"    {% if site.region == 'far_reach'    %}selected{% endif %}>Far Reach</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Priority Level</label>
+              <select name="priority_level" class="form-select">
+                <option value="normal" {% if site.priority_level == 'normal' or not site.priority_level %}selected{% endif %}>Normal</option>
+                <option value="high"   {% if site.priority_level == 'high'   %}selected{% endif %}>High</option>
+                <option value="low"    {% if site.priority_level == 'low'    %}selected{% endif %}>Low</option>
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Assigned Engineer</label>
+              <select name="assigned_agent_id" class="form-select">
+                <option value="">— Unassigned —</option>
+                {% for a in agents %}
+                <option value="{{ a.id }}" {% if site.assigned_agent_id == a.id %}selected{% endif %}>{{ a.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+
+            <div class="col-md-6">
+              <label class="form-label">Total APs</label>
+              <input type="number" name="total_aps" class="form-control"
+                     min="0" value="{{ site.total_aps or 0 }}">
+              <div class="form-text">Auto-updated on Ruckus import.</div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">SmartZone Alias Name</label>
+              <input type="text" name="ruckus_zone_name" class="form-control"
+                     value="{{ site.ruckus_zone_name or '' }}" placeholder="Leave blank to use site name">
+              <div class="form-text">Exact name as shown in the Ruckus controller — used for import matching.</div>
+            </div>
+
+            <div class="col-12">
+              <label class="form-label">Notes</label>
+              <textarea name="notes" class="form-control" rows="3"
+                        placeholder="Optional operational notes…">{{ site.notes or '' }}</textarea>
+            </div>
+
+            <div class="col-12 d-flex gap-2">
+              <button type="submit" class="btn btn-primary">
+                <i class="bi bi-save me-1"></i>Save Changes
+              </button>
+              <a href="{{ url_for('sites') }}" class="btn btn-outline-secondary">Cancel</a>
+            </div>
+
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-md-4 mt-4 mt-md-0">
+    <div class="card">
+      <div class="card-header">Site Info</div>
+      <div class="card-body small">
+        <div class="mb-3">
+          <div class="text-muted">Status</div>
+          {% if site.active %}<span class="badge bg-healthy">Active</span>
+          {% else %}<span class="badge bg-secondary">Inactive</span>{% endif %}
+        </div>
+        <div class="mb-3">
+          <div class="text-muted">Created</div>
+          {{ site.created_at.strftime('%d %b %Y') if site.created_at else '—' }}
+        </div>
+        <div class="mb-3">
+          <div class="text-muted">Monitoring Logs</div>
+          {{ site.monitoring_logs | length }}
+        </div>
+        <a href="{{ url_for('toggle_site', id=site.id) }}"
+           class="btn btn-sm {% if site.active %}btn-outline-warning{% else %}btn-outline-success{% endif %} w-100 mt-1">
+          <i class="bi bi-{% if site.active %}pause{% else %}play{% endif %} me-1"></i>
+          {{ 'Deactivate Site' if site.active else 'Activate Site' }}
+        </a>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
     <h2 class="text-white mb-0"><i class="bi bi-pencil-square me-2"></i>Edit Site</h2>
     <small class="text-muted">{{ site.name }}</small>
   </div>

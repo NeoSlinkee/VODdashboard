@@ -4,6 +4,206 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
   <div>
+    <h2><i class="bi bi-building me-2" style="color:var(--vod-gold)"></i>Site Registry</h2>
+    <p class="text-muted mb-0 small">Operational asset register</p>
+  </div>
+  <div class="d-flex gap-2">
+    <a href="{{ url_for('add_site') }}" class="btn btn-primary btn-sm">
+      <i class="bi bi-plus-circle me-1"></i>Add Site
+    </a>
+    <a href="{{ url_for('import_sites') }}" class="btn btn-outline-secondary btn-sm">
+      <i class="bi bi-upload me-1"></i>Bulk Import
+    </a>
+  </div>
+</div>
+
+{# Metric strip #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="card stat-card text-center">
+      <div class="number">{{ all_sites | length }}</div>
+      <div class="label">Total Sites</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card text-center success">
+      <div class="number" style="color:var(--success-color)">{{ within_reach | length }}</div>
+      <div class="label">Within Reach</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card text-center">
+      <div class="number" style="color:var(--warning-color)">{{ far_reach | length }}</div>
+      <div class="label">Far Reach</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="card stat-card text-center">
+      <div class="number" style="color:#95a5a6">{{ inactive_count }}</div>
+      <div class="label">Inactive</div>
+    </div>
+  </div>
+</div>
+
+{# Filters #}
+<div class="card mb-4">
+  <div class="card-body py-2">
+    <form method="get" class="row g-2 align-items-end">
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Reach</label>
+        <select name="reach" class="form-select form-select-sm">
+          <option value="">All</option>
+          <option value="within_reach" {% if reach_filter == 'within_reach' %}selected{% endif %}>Within Reach</option>
+          <option value="far_reach"    {% if reach_filter == 'far_reach'    %}selected{% endif %}>Far Reach</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Engineer</label>
+        <select name="agent" class="form-select form-select-sm">
+          <option value="">All</option>
+          {% for a in agents %}
+          <option value="{{ a.id }}" {% if agent_filter | string == a.id | string %}selected{% endif %}>{{ a.name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">Priority</label>
+        <select name="priority" class="form-select form-select-sm">
+          <option value="">All</option>
+          <option value="high"   {% if priority_filter == 'high'   %}selected{% endif %}>High</option>
+          <option value="normal" {% if priority_filter == 'normal' %}selected{% endif %}>Normal</option>
+          <option value="low"    {% if priority_filter == 'low'    %}selected{% endif %}>Low</option>
+        </select>
+      </div>
+      <div class="col-6 col-md-2">
+        <label class="form-label small mb-1">City</label>
+        <select name="city" class="form-select form-select-sm">
+          <option value="">All</option>
+          {% for c in cities %}
+          <option value="{{ c }}" {% if city_filter == c %}selected{% endif %}>{{ c }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="col-6 col-md-2 d-flex align-items-end gap-1">
+        <button type="submit" class="btn btn-secondary btn-sm flex-fill">Filter</button>
+        <a href="{{ url_for('sites') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
+      </div>
+      <div class="col-6 col-md-2 d-flex align-items-end">
+        <div class="form-check form-switch mb-0">
+          <input class="form-check-input" type="checkbox" id="showInactive" name="show_inactive" value="1"
+                 {% if show_inactive %}checked{% endif %} onchange="this.form.submit()">
+          <label class="form-check-label small" for="showInactive">Show inactive</label>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+{# Table #}
+{% if all_sites %}
+<div class="card">
+  <div class="table-responsive">
+    <table class="table table-hover align-middle mb-0">
+      <thead>
+        <tr>
+          <th>Site Name</th>
+          <th>Brand</th>
+          <th>City</th>
+          <th>Reach</th>
+          <th>Priority</th>
+          <th>Assigned Engineer</th>
+          <th class="text-center">APs</th>
+          <th class="text-center">Status</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for s in all_sites %}
+        <tr {% if not s.active %}class="text-muted" style="opacity:.55"{% endif %}>
+          <td>
+            <span class="fw-semibold">{{ s.name }}</span>
+            {% if s.ruckus_zone_name and s.ruckus_zone_name != s.name %}
+            <br><small class="text-muted">{{ s.ruckus_zone_name }}</small>
+            {% endif %}
+            {% if s.notes %}
+            <i class="bi bi-sticky ms-1 text-muted" title="{{ s.notes | e }}"></i>
+            {% endif %}
+          </td>
+          <td>
+            {% if s.brand %}<span class="badge bg-primary">{{ s.brand }}</span>
+            {% else %}<span class="text-muted">—</span>{% endif %}
+          </td>
+          <td>{{ s.city or '—' }}</td>
+          <td>
+            {% if s.region == 'within_reach' %}
+              <span class="badge" style="background:var(--success-color)">Within Reach</span>
+            {% elif s.region == 'far_reach' %}
+              <span class="badge" style="background:var(--warning-color)">Far Reach</span>
+            {% else %}
+              <span class="text-muted small">{{ s.region }}</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if s.priority_level == 'high' %}
+              <span class="badge" style="background:var(--danger-color)">High</span>
+            {% elif s.priority_level == 'low' %}
+              <span class="badge bg-secondary">Low</span>
+            {% else %}
+              <span class="text-muted small">Normal</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if s.assigned_agent %}
+              <span class="badge" style="background:var(--vod-charcoal)">{{ s.assigned_agent.name }}</span>
+            {% else %}
+              <span class="text-muted small"><i class="bi bi-person-dash me-1"></i>Unassigned</span>
+            {% endif %}
+          </td>
+          <td class="text-center">
+            <span class="fw-semibold">{{ s.total_aps or 0 }}</span>
+            {% if s.aps_offline %}<br><small class="text-danger">{{ s.aps_offline }} offline</small>{% endif %}
+          </td>
+          <td class="text-center">
+            {% if s.active %}
+              <span class="badge bg-healthy">Active</span>
+            {% else %}
+              <span class="badge bg-secondary">Inactive</span>
+            {% endif %}
+          </td>
+          <td class="text-end text-nowrap">
+            <a href="{{ url_for('edit_site', id=s.id) }}" class="btn btn-outline-secondary btn-sm me-1" title="Edit">
+              <i class="bi bi-pencil"></i>
+            </a>
+            <a href="{{ url_for('toggle_site', id=s.id) }}"
+               class="btn btn-sm {% if s.active %}btn-outline-warning{% else %}btn-outline-success{% endif %}"
+               title="{{ 'Deactivate' if s.active else 'Activate' }}">
+              <i class="bi bi-{% if s.active %}pause{% else %}play{% endif %}"></i>
+            </a>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  <div class="card-footer text-muted small">
+    Showing {{ all_sites | length }} site{% if all_sites | length != 1 %}s{% endif %}
+    {% if not show_inactive and inactive_count %} —
+      <a href="?show_inactive=1" class="text-muted">{{ inactive_count }} inactive hidden</a>
+    {% endif %}
+  </div>
+</div>
+{% else %}
+<div class="text-center text-muted py-5">
+  <i class="bi bi-building fs-1 d-block mb-2"></i>
+  No sites found matching the current filters.
+  <br><a href="{{ url_for('sites') }}" class="mt-1 d-inline-block">Clear filters</a>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div>
     <h2 class="text-white mb-0"><i class="bi bi-building me-2"></i>Site Registry</h2>
     <small class="text-muted">Operational asset register</small>
   </div>

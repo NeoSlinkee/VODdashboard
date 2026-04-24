@@ -87,16 +87,16 @@ ASSIGNED_SITES = {
         {'name': 'Stay Easy EastGate', 'ruckus_zones': ['Stay Easy EastGate', 'StayEasy EastGate']},
         # OR Tambo
         {'name': 'Garden Court OR Tambo', 'ruckus_zones': ['Garden Court OR Tambo', 'GC OR Tambo']},
-        {'name': 'InterContinental OR Tambo', 'ruckus_zones': ['InterConti OR Tambo', 'IC OR Tambo', 'IC Airport']},
-        {'name': 'Southern Sun OR Tambo', 'ruckus_zones': ['Southern Sun OR Tambo', 'SS OR Tambo']},
+        {'name': 'IC Airport OR Tambo', 'ruckus_zones': ['InterConti OR Tambo', 'IC OR Tambo', 'IC Airport']},
+        {'name': 'SS OR Tambo', 'ruckus_zones': ['Southern Sun OR Tambo', 'SS OR Tambo']},
     ],
     'far_reach': [
         # Durban
         {'name': 'Stay Easy Pietermaritzburg', 'ruckus_zones': ['Stay Easy Pietermaritzburg', 'StayEasy PMB']},
-        {'name': 'Garden Court South Beach', 'ruckus_zones': ['Garden Court South Beach', 'GC South Beach']},
+        {'name': 'GC South Beach Durban', 'ruckus_zones': ['Garden Court South Beach', 'GC South Beach']},
         {'name': 'The Edward Durban', 'ruckus_zones': ['The Edward', 'Edward Durban']},
-        {'name': 'Garden Court Marine Parade', 'ruckus_zones': ['Garden Court Marine Parade', 'GC Marine Parade']},
-        {'name': 'SS Elangeni & Maharani', 'ruckus_zones': ['SS Elangeni', 'Elangeni', 'Maharani', 'SS Maharani']},
+        {'name': 'GC Marine Parade Durban', 'ruckus_zones': ['Garden Court Marine Parade', 'GC Marine Parade']},
+        {'name': 'SS Elangeni & Maharani Durban', 'ruckus_zones': ['SS Elangeni', 'Elangeni', 'Maharani', 'SS Maharani']},
         {'name': 'Suncoast Hotel and Towers', 'ruckus_zones': ['Suncoast Hotel', 'Suncoast Towers', 'Suncoast']},
         {'name': 'The Ridge Hotel', 'ruckus_zones': ['The Ridge', 'Ridge Hotel']},
     ]
@@ -123,18 +123,30 @@ SITE_NAME_MAP = {
     'gc morningside': 'Garden Court Morningside Sandton',
     'gc or tambo staff': 'Garden Court OR Tambo',
     'garden court or tambo staff': 'Garden Court OR Tambo',
-    'interconti or tambo': 'InterContinental OR Tambo',
-    'ic or tambo': 'InterContinental OR Tambo',
-    'southern sun elangeni': 'SS Elangeni & Maharani',
-    'southern sun elangeni staff': 'SS Elangeni & Maharani',
-    'ss elangeni': 'SS Elangeni & Maharani',
-    'ss maharani': 'SS Elangeni & Maharani',
-    'gc marine parade': 'Garden Court Marine Parade',
-    'gc south beach': 'Garden Court South Beach',
+    # IC / OR Tambo
+    'interconti or tambo': 'IC Airport OR Tambo',
+    'ic or tambo': 'IC Airport OR Tambo',
+    'intercontinental or tambo': 'IC Airport OR Tambo',
+    # SS OR Tambo
+    'ss or tambo': 'SS OR Tambo',
+    'southern sun or tambo': 'SS OR Tambo',
+    # Elangeni & Maharani Durban
+    'southern sun elangeni': 'SS Elangeni & Maharani Durban',
+    'southern sun elangeni staff': 'SS Elangeni & Maharani Durban',
+    'ss elangeni': 'SS Elangeni & Maharani Durban',
+    'ss maharani': 'SS Elangeni & Maharani Durban',
+    'ss elangeni maharani': 'SS Elangeni & Maharani Durban',
+    'elangeni': 'SS Elangeni & Maharani Durban',
+    'maharani': 'SS Elangeni & Maharani Durban',
+    # Garden Court South Beach / Marine Parade
+    'gc marine parade': 'GC Marine Parade Durban',
+    'garden court marine parade': 'GC Marine Parade Durban',
+    'gc south beach': 'GC South Beach Durban',
+    'garden court south beach': 'GC South Beach Durban',
+    # Misc
     'se pretoria': 'Stay Easy Pretoria',
     'se eastgate': 'Stay Easy EastGate',
     'ss pretoria': 'Southern Sun Pretoria',
-    'ss or tambo': 'Southern Sun OR Tambo',
 }
 
 # APs with these keywords are treated as maintenance/decommissioned and excluded
@@ -4162,26 +4174,51 @@ OFFICIAL_SITE_REGISTRY = [
 def _seed_official_site_registry():
     """Upsert the official site list into the DB.
 
+    - Renames/merges legacy site names to new canonical names (deduplication).
     - Creates new sites that do not exist yet.
     - Updates brand/city/ruckus_zone_name on existing sites if those fields are blank.
-    - Sets assigned_agent_id on sites that have none, using the first active Agent.
+    - Does NOT auto-assign agents — assignment is managed via the UI.
     Safe to call on every boot.
     """
-    default_agent = Agent.query.filter_by(active=True).order_by(Agent.id).first()
+    # Step 1: Rename legacy names → canonical names (merge old DB records)
+    _LEGACY_RENAMES = {
+        'Garden Court South Beach':   'GC South Beach Durban',
+        'Garden Court Marine Parade': 'GC Marine Parade Durban',
+        'SS Elangeni & Maharani':     'SS Elangeni & Maharani Durban',
+        'InterContinental OR Tambo':  'IC Airport OR Tambo',
+        'Southern Sun OR Tambo':      'SS OR Tambo',
+    }
+    renamed = deleted = 0
+    for old_name, new_name in _LEGACY_RENAMES.items():
+        old_site = Site.query.filter_by(name=old_name).first()
+        if old_site:
+            new_site = Site.query.filter_by(name=new_name).first()
+            if new_site:
+                # True duplicate — remove the old record
+                db.session.delete(old_site)
+                deleted += 1
+            else:
+                # Rename old record to canonical name
+                old_site.name = new_name
+                renamed += 1
+    db.session.commit()
+    if renamed or deleted:
+        print(f'  Site dedup: {renamed} renamed, {deleted} duplicates removed')
+
+    # Step 2: Upsert official sites (no auto-assignment — use UI to assign engineers)
     created = updated = 0
     for rec in OFFICIAL_SITE_REGISTRY:
         primary_alias = rec['ruckus_zones'][0]
         site = Site.query.filter_by(name=rec['name']).first()
         if not site:
             site = Site(
-                name              = rec['name'],
-                brand             = rec['brand'],
-                city              = rec['city'],
-                region            = rec['region'],
-                ruckus_zone_name  = primary_alias,
-                assigned_agent_id = default_agent.id if default_agent else None,
-                priority_level    = 'normal',
-                active            = True,
+                name             = rec['name'],
+                brand            = rec['brand'],
+                city             = rec['city'],
+                region           = rec['region'],
+                ruckus_zone_name = primary_alias,
+                priority_level   = 'normal',
+                active           = True,
             )
             db.session.add(site)
             created += 1
@@ -4194,9 +4231,6 @@ def _seed_official_site_registry():
                 updated += 1
             if not site.ruckus_zone_name:
                 site.ruckus_zone_name = primary_alias
-                updated += 1
-            if not site.assigned_agent_id and default_agent:
-                site.assigned_agent_id = default_agent.id
                 updated += 1
     db.session.commit()
     if created or updated:
