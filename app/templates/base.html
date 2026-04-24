@@ -347,6 +347,9 @@
                     <a class="nav-link {{ 'active' if 'ticket' in request.endpoint else '' }}" href="{{ url_for('tickets') }}">
                         <i class="bi bi-ticket"></i> Tickets
                     </a>
+                    <a class="nav-link {{ 'active' if 'support_case' in request.endpoint else '' }}" href="{{ url_for('support_cases') }}">
+                        <i class="bi bi-diagram-3"></i> Support Flow
+                    </a>
                     <hr>
                     <small class="text-muted">FIELD OPERATIONS</small>
                     <a class="nav-link {{ 'active' if request.endpoint in ('site_visits', 'add_site_visit') else '' }}" href="{{ url_for('site_visits') }}">

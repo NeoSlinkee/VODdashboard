@@ -444,6 +444,80 @@ class ImportLog(db.Model):
     details = db.Column(db.Text)
 
 
+# ---------------------------------------------------------------------------
+# Support Flow Module
+# ---------------------------------------------------------------------------
+# Status lifecycle:
+#   open → investigating → escalated_t2 → escalated_t3 → resolved → closed
+# Tier level tracks which team currently owns the case.
+# ---------------------------------------------------------------------------
+
+SUPPORT_CASE_STATUSES = [
+    ('open',           'Open'),
+    ('investigating',  'Investigating'),
+    ('escalated_t2',   'Escalated – Tier 2'),
+    ('escalated_t3',   'Escalated – Tier 3 IPTV'),
+    ('resolved',       'Resolved'),
+    ('closed',         'Closed'),
+]
+
+SUPPORT_CHANNELS = ['email', 'whatsapp', 'teams', 'phone', 'other']
+SUPPORT_PRIORITIES = ['low', 'medium', 'high', 'critical']
+
+
+class SupportCase(db.Model):
+    """Internal support case — maps to management swimlane workflow."""
+    id = db.Column(db.Integer, primary_key=True)
+    ticket_number  = db.Column(db.String(50))           # Freshdesk ref (optional)
+    customer_name  = db.Column(db.String(200), nullable=False)
+    channel        = db.Column(db.String(30), default='email')    # email/whatsapp/teams/phone
+    summary        = db.Column(db.String(500), nullable=False)
+    priority       = db.Column(db.String(20), default='medium')   # low/medium/high/critical
+    status         = db.Column(db.String(30), default='open')
+    tier_level     = db.Column(db.Integer, default=1)             # 1 / 2 / 3
+    assigned_agent_id  = db.Column(db.Integer, db.ForeignKey('agent.id'), nullable=True)
+    escalated_to_id    = db.Column(db.Integer, db.ForeignKey('agent.id'), nullable=True)
+    opened_at      = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at     = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    resolved_at    = db.Column(db.DateTime, nullable=True)
+    resolution_notes = db.Column(db.Text)
+
+    assigned_agent  = db.relationship('Agent', foreign_keys=[assigned_agent_id],
+                                      backref='assigned_cases')
+    escalated_to    = db.relationship('Agent', foreign_keys=[escalated_to_id],
+                                      backref='escalated_cases')
+
+    @property
+    def status_label(self):
+        return dict(SUPPORT_CASE_STATUSES).get(self.status, self.status)
+
+    @property
+    def priority_class(self):
+        return {'low': 'success', 'medium': 'warning',
+                'high': 'danger', 'critical': 'danger'}.get(self.priority, 'secondary')
+
+    @property
+    def resolution_minutes(self):
+        if self.resolved_at and self.opened_at:
+            return int((self.resolved_at - self.opened_at).total_seconds() // 60)
+        return None
+
+
+class SupportCaseEvent(db.Model):
+    """Audit trail — every status change or note on a support case."""
+    id         = db.Column(db.Integer, primary_key=True)
+    case_id    = db.Column(db.Integer, db.ForeignKey('support_case.id'), nullable=False)
+    actor_id   = db.Column(db.Integer, db.ForeignKey('app_user.id'), nullable=True)
+    event_type = db.Column(db.String(50))   # 'status_change' | 'note' | 'escalation'
+    old_status = db.Column(db.String(30))
+    new_status = db.Column(db.String(30))
+    note       = db.Column(db.Text)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+    case  = db.relationship('SupportCase', backref=db.backref('events', order_by='SupportCaseEvent.created_at'))
+    actor = db.relationship('User', foreign_keys=[actor_id])
+
+
 def _build_standby_engineers_map():
     """Build the STANDBY_ENGINEERS-style dict dynamically from the Agent table.
 
@@ -1441,6 +1515,18 @@ def index():
         total_sites=len([s for s in site_status if s['status'] != 'unknown']),
         total_engineers=len(agents),
         engineers_available=max(len(agents) - approved_today, 0),
+        # Support Flow metrics for dashboard widget
+        support_open_l1=SupportCase.query.filter(
+            SupportCase.status.notin_(['closed', 'resolved']),
+            SupportCase.tier_level == 1).count(),
+        support_open_l2=SupportCase.query.filter(
+            SupportCase.status.notin_(['closed', 'resolved']),
+            SupportCase.tier_level == 2).count(),
+        support_open_l3=SupportCase.query.filter(
+            SupportCase.status.notin_(['closed', 'resolved']),
+            SupportCase.tier_level == 3).count(),
+        support_closed_today=SupportCase.query.filter(
+            db.func.date(SupportCase.resolved_at) == today).count(),
         ticket_trend=[
             {
                 'week': (_we - timedelta(weeks=i)).strftime('%d %b'),
@@ -3610,6 +3696,175 @@ def cron_email_monthly_summary():
             failed.append({'email': email, 'error': err2})
 
     return jsonify({'status': 'success' if sent > 0 else 'failed', 'sent': sent, 'failed': failed})
+
+
+# ============== Support Flow Module ==============
+
+@app.route('/support-cases')
+@login_required
+def support_cases():
+    """List all support cases with filters."""
+    status_filter   = request.args.get('status', '')
+    tier_filter     = request.args.get('tier', '')
+    priority_filter = request.args.get('priority', '')
+    agent_filter    = request.args.get('agent', '')
+
+    q = SupportCase.query
+    if status_filter:
+        q = q.filter(SupportCase.status == status_filter)
+    if tier_filter:
+        q = q.filter(SupportCase.tier_level == int(tier_filter))
+    if priority_filter:
+        q = q.filter(SupportCase.priority == priority_filter)
+    if agent_filter:
+        q = q.filter(SupportCase.assigned_agent_id == int(agent_filter))
+
+    cases = q.order_by(SupportCase.opened_at.desc()).all()
+
+    # Sidebar metrics
+    open_l1  = SupportCase.query.filter(SupportCase.status.notin_(['closed', 'resolved']),
+                                         SupportCase.tier_level == 1).count()
+    open_l2  = SupportCase.query.filter(SupportCase.status.notin_(['closed', 'resolved']),
+                                         SupportCase.tier_level == 2).count()
+    open_l3  = SupportCase.query.filter(SupportCase.status.notin_(['closed', 'resolved']),
+                                         SupportCase.tier_level == 3).count()
+    today    = datetime.utcnow().date()
+    closed_today = SupportCase.query.filter(
+        db.func.date(SupportCase.resolved_at) == today).count()
+
+    agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
+
+    return render_template('support_cases.html',
+        cases=cases,
+        statuses=SUPPORT_CASE_STATUSES,
+        channels=SUPPORT_CHANNELS,
+        priorities=SUPPORT_PRIORITIES,
+        agents=agents,
+        open_l1=open_l1, open_l2=open_l2, open_l3=open_l3,
+        closed_today=closed_today,
+        status_filter=status_filter,
+        tier_filter=tier_filter,
+        priority_filter=priority_filter,
+        agent_filter=agent_filter,
+    )
+
+
+@app.route('/support-cases/add', methods=['GET', 'POST'])
+@login_required
+def add_support_case():
+    agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
+    if request.method == 'POST':
+        customer = request.form.get('customer_name', '').strip()
+        summary  = request.form.get('summary', '').strip()
+        if not customer or not summary:
+            flash('Customer name and summary are required.', 'warning')
+            return render_template('add_support_case.html',
+                agents=agents, channels=SUPPORT_CHANNELS,
+                priorities=SUPPORT_PRIORITIES)
+
+        agent_id_raw = request.form.get('assigned_agent_id', '').strip()
+        case = SupportCase(
+            ticket_number   = request.form.get('ticket_number', '').strip() or None,
+            customer_name   = customer,
+            channel         = request.form.get('channel', 'email'),
+            summary         = summary,
+            priority        = request.form.get('priority', 'medium'),
+            assigned_agent_id = int(agent_id_raw) if agent_id_raw.isdigit() else None,
+        )
+        db.session.add(case)
+        db.session.flush()
+        _log_case_event(case.id, 'status_change', None, 'open',
+                        f'Case opened by {current_user.email}')
+        db.session.commit()
+        flash(f'Support case #{case.id} opened.', 'success')
+        return redirect(url_for('view_support_case', id=case.id))
+
+    return render_template('add_support_case.html',
+        agents=agents, channels=SUPPORT_CHANNELS, priorities=SUPPORT_PRIORITIES)
+
+
+@app.route('/support-cases/<int:id>')
+@login_required
+def view_support_case(id):
+    case   = SupportCase.query.get_or_404(id)
+    agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
+    return render_template('view_support_case.html',
+        case=case, agents=agents,
+        statuses=SUPPORT_CASE_STATUSES,
+        priorities=SUPPORT_PRIORITIES)
+
+
+@app.route('/support-cases/<int:id>/action', methods=['POST'])
+@login_required
+def support_case_action(id):
+    """Handle workflow buttons: escalate, resolve, close, add note, etc."""
+    case   = SupportCase.query.get_or_404(id)
+    action = request.form.get('action', '').strip()
+
+    # --- Status transitions driven by action buttons ---
+    TRANSITIONS = {
+        # action_key: (new_status, new_tier, event_note)
+        'investigate':   ('investigating',  case.tier_level, 'Marked as investigating'),
+        'escalate_t2':   ('escalated_t2',   2,               'Escalated to Tier 2 Support'),
+        'escalate_t3':   ('escalated_t3',   3,               'Escalated to Tier 3 IPTV'),
+        'return_t1':     ('investigating',  1,               'Returned to Tier 1 Support'),
+        'working':       ('investigating',  case.tier_level, 'Tier 2: working on case'),
+        'resolve':       ('resolved',       case.tier_level, 'Case resolved'),
+        'close':         ('closed',         case.tier_level, 'Case closed'),
+        'reopen':        ('open',           1,               'Case re-opened'),
+    }
+
+    if action in TRANSITIONS:
+        new_status, new_tier, event_note = TRANSITIONS[action]
+        old_status = case.status
+        case.status     = new_status
+        case.tier_level = new_tier
+        case.updated_at = datetime.utcnow()
+        if new_status == 'resolved' and not case.resolved_at:
+            case.resolved_at = datetime.utcnow()
+        if new_status in ('open', 'investigating') and case.resolved_at:
+            case.resolved_at = None  # re-opened
+        _log_case_event(case.id, 'status_change', old_status, new_status, event_note)
+
+    elif action == 'add_note':
+        note = request.form.get('note', '').strip()
+        if note:
+            _log_case_event(case.id, 'note', None, None, note)
+        else:
+            flash('Note cannot be empty.', 'warning')
+            return redirect(url_for('view_support_case', id=id))
+
+    elif action == 'assign':
+        agent_id_raw = request.form.get('assigned_agent_id', '').strip()
+        agent_id = int(agent_id_raw) if agent_id_raw.isdigit() else None
+        case.assigned_agent_id = agent_id
+        case.updated_at = datetime.utcnow()
+        agent_name = Agent.query.get(agent_id).name if agent_id else 'Unassigned'
+        _log_case_event(case.id, 'note', None, None, f'Assigned to {agent_name}')
+
+    elif action == 'update_resolution':
+        case.resolution_notes = request.form.get('resolution_notes', '').strip()
+        case.updated_at = datetime.utcnow()
+        _log_case_event(case.id, 'note', None, None, 'Resolution notes updated')
+
+    else:
+        flash(f'Unknown action: {action}', 'warning')
+        return redirect(url_for('view_support_case', id=id))
+
+    db.session.commit()
+    return redirect(url_for('view_support_case', id=id))
+
+
+def _log_case_event(case_id, event_type, old_status, new_status, note=''):
+    event = SupportCaseEvent(
+        case_id    = case_id,
+        actor_id   = current_user.id if current_user.is_authenticated else None,
+        event_type = event_type,
+        old_status = old_status,
+        new_status = new_status,
+        note       = note,
+    )
+    db.session.add(event)
 
 
 # ============== Wallboard Mode ==============

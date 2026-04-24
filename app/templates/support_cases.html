@@ -1,0 +1,160 @@
+{% extends "base.html" %}
+{% block title %}Support Flow – {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<style>
+  .tier-badge-1 { background:#264653; color:#fff; }
+  .tier-badge-2 { background:#e9c46a; color:#1a1a1a; }
+  .tier-badge-3 { background:#e76f51; color:#fff; }
+  .status-open          { border-left: 4px solid #6c757d; }
+  .status-investigating { border-left: 4px solid #e9c46a; }
+  .status-escalated_t2  { border-left: 4px solid #f4a261; }
+  .status-escalated_t3  { border-left: 4px solid #e76f51; }
+  .status-resolved      { border-left: 4px solid #2a9d8f; }
+  .status-closed        { border-left: 4px solid #495057; }
+  .metric-card { background:#1e2428; border:1px solid #2d3338; border-radius:8px; padding:1rem 1.25rem; }
+  .metric-card .value   { font-size:2rem; font-weight:700; }
+  .metric-card .label   { font-size:.8rem; opacity:.7; text-transform:uppercase; letter-spacing:.06em; }
+</style>
+
+<div class="d-flex align-items-center mb-3">
+  <h4 class="mb-0 me-auto"><i class="bi bi-diagram-3 me-2"></i>Support Flow</h4>
+  {% if current_user.is_admin %}
+  <a href="{{ url_for('add_support_case') }}" class="btn btn-sm" style="background:#c9a84c;color:#1a1a1a;font-weight:600;">
+    <i class="bi bi-plus-lg me-1"></i>New Case
+  </a>
+  {% endif %}
+</div>
+
+{# ── Metric strip ── #}
+<div class="row g-3 mb-4">
+  <div class="col-6 col-md-3">
+    <div class="metric-card text-white">
+      <div class="value text-warning">{{ open_l1 }}</div>
+      <div class="label">Open L1</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="metric-card text-white">
+      <div class="value" style="color:#f4a261;">{{ open_l2 }}</div>
+      <div class="label">Tier 2 Escalations</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="metric-card text-white">
+      <div class="value text-danger">{{ open_l3 }}</div>
+      <div class="label">Tier 3 IPTV</div>
+    </div>
+  </div>
+  <div class="col-6 col-md-3">
+    <div class="metric-card text-white">
+      <div class="value" style="color:#2a9d8f;">{{ closed_today }}</div>
+      <div class="label">Resolved Today</div>
+    </div>
+  </div>
+</div>
+
+{# ── Filters ── #}
+<form method="get" class="row g-2 mb-3 align-items-end">
+  <div class="col-auto">
+    <select name="status" class="form-select form-select-sm bg-dark text-white border-secondary">
+      <option value="">All Statuses</option>
+      {% for val, lbl in statuses %}
+        <option value="{{ val }}" {{ 'selected' if status_filter == val }}>{{ lbl }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="tier" class="form-select form-select-sm bg-dark text-white border-secondary">
+      <option value="">All Tiers</option>
+      <option value="1" {{ 'selected' if tier_filter == '1' }}>Tier 1</option>
+      <option value="2" {{ 'selected' if tier_filter == '2' }}>Tier 2</option>
+      <option value="3" {{ 'selected' if tier_filter == '3' }}>Tier 3 IPTV</option>
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="priority" class="form-select form-select-sm bg-dark text-white border-secondary">
+      <option value="">All Priorities</option>
+      {% for p in priorities %}
+        <option value="{{ p }}" {{ 'selected' if priority_filter == p }}>{{ p|capitalize }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <select name="agent" class="form-select form-select-sm bg-dark text-white border-secondary">
+      <option value="">All Engineers</option>
+      {% for a in agents %}
+        <option value="{{ a.id }}" {{ 'selected' if agent_filter == a.id|string }}>{{ a.name }}</option>
+      {% endfor %}
+    </select>
+  </div>
+  <div class="col-auto">
+    <button type="submit" class="btn btn-sm btn-outline-secondary">Filter</button>
+    <a href="{{ url_for('support_cases') }}" class="btn btn-sm btn-link text-secondary">Clear</a>
+  </div>
+</form>
+
+{# ── Case table ── #}
+{% if cases %}
+<div class="table-responsive">
+<table class="table table-dark table-hover align-middle mb-0" style="font-size:.9rem;">
+  <thead style="background:#1a1e22;">
+    <tr>
+      <th style="width:60px;">#</th>
+      <th>Customer</th>
+      <th>Summary</th>
+      <th style="width:90px;">Priority</th>
+      <th style="width:80px;">Tier</th>
+      <th style="width:160px;">Status</th>
+      <th>Assigned</th>
+      <th style="width:120px;">Opened</th>
+      <th></th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for c in cases %}
+    <tr class="status-{{ c.status }}">
+      <td class="text-muted">{{ c.id }}</td>
+      <td>
+        <strong>{{ c.customer_name }}</strong>
+        {% if c.ticket_number %}<br><small class="text-muted">FD#{{ c.ticket_number }}</small>{% endif %}
+      </td>
+      <td>{{ c.summary|truncate(80) }}</td>
+      <td>
+        <span class="badge bg-{{ c.priority_class }}">{{ c.priority|capitalize }}</span>
+      </td>
+      <td>
+        <span class="badge tier-badge-{{ c.tier_level }}">T{{ c.tier_level }}</span>
+      </td>
+      <td>
+        <span class="badge
+          {% if c.status == 'open' %}bg-secondary
+          {% elif c.status == 'investigating' %}bg-warning text-dark
+          {% elif c.status == 'escalated_t2' %}bg-orange text-dark
+          {% elif c.status == 'escalated_t3' %}bg-danger
+          {% elif c.status == 'resolved' %}bg-success
+          {% elif c.status == 'closed' %}bg-dark border border-secondary
+          {% endif %}
+          ">{{ c.status_label }}</span>
+      </td>
+      <td>{{ c.assigned_agent.name if c.assigned_agent else '—' }}</td>
+      <td class="text-muted" style="white-space:nowrap;">{{ c.opened_at.strftime('%d %b %H:%M') }}</td>
+      <td>
+        <a href="{{ url_for('view_support_case', id=c.id) }}"
+           class="btn btn-sm btn-outline-secondary py-0">View</a>
+      </td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+</div>
+{% else %}
+<div class="text-center py-5 text-muted">
+  <i class="bi bi-inbox fs-1 d-block mb-2"></i>
+  No support cases{% if status_filter or tier_filter or priority_filter %} matching current filters{% endif %}.
+  {% if current_user.is_admin %}
+  <br><a href="{{ url_for('add_support_case') }}" class="btn btn-sm mt-3" style="background:#c9a84c;color:#1a1a1a;">Open First Case</a>
+  {% endif %}
+</div>
+{% endif %}
+{% endblock %}

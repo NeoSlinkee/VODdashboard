@@ -1,0 +1,291 @@
+{% extends "base.html" %}
+{% block title %}Case #{{ case.id }} – {{ APP_NAME }}{% endblock %}
+
+{% block content %}
+<style>
+  .tier-badge-1 { background:#264653; color:#fff; }
+  .tier-badge-2 { background:#e9c46a; color:#1a1a1a; }
+  .tier-badge-3 { background:#e76f51; color:#fff; }
+  .action-btn   { font-weight:600; font-size:.85rem; }
+  .timeline-event { border-left:2px solid #2d3338; padding-left:1rem; margin-left:.5rem; }
+  .timeline-event + .timeline-event { margin-top:.75rem; }
+  .timeline-event .dot {
+    width:10px; height:10px; border-radius:50%; background:#c9a84c;
+    position:absolute; left:-5px; top:4px;
+  }
+</style>
+
+<div class="d-flex align-items-center mb-4 gap-3">
+  <a href="{{ url_for('support_cases') }}" class="btn btn-sm btn-outline-secondary">
+    <i class="bi bi-arrow-left"></i>
+  </a>
+  <h4 class="mb-0">Case #{{ case.id }} — {{ case.customer_name }}</h4>
+  <span class="badge tier-badge-{{ case.tier_level }} ms-2">Tier {{ case.tier_level }}</span>
+  <span class="badge bg-{{ case.priority_class }} ms-1">{{ case.priority|capitalize }}</span>
+</div>
+
+<div class="row g-4">
+
+  {# ── LEFT: Details + Actions ── #}
+  <div class="col-lg-7">
+
+    {# Summary card #}
+    <div class="card bg-dark border-secondary mb-3">
+      <div class="card-body">
+        <div class="row g-2 mb-3">
+          <div class="col-6">
+            <small class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;">Channel</small>
+            <strong>{{ case.channel|capitalize }}</strong>
+          </div>
+          <div class="col-6">
+            <small class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;">Status</small>
+            <span class="badge
+              {% if case.status == 'open' %}bg-secondary
+              {% elif case.status == 'investigating' %}bg-warning text-dark
+              {% elif case.status in ('escalated_t2','escalated_t3') %}bg-danger
+              {% elif case.status == 'resolved' %}bg-success
+              {% elif case.status == 'closed' %}bg-dark border border-secondary
+              {% endif %}
+              ">{{ case.status_label }}</span>
+          </div>
+          <div class="col-6">
+            <small class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;">Assigned To</small>
+            <strong>{{ case.assigned_agent.name if case.assigned_agent else 'Unassigned' }}</strong>
+          </div>
+          <div class="col-6">
+            <small class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;">Opened</small>
+            <strong>{{ case.opened_at.strftime('%d %b %Y %H:%M') }}</strong>
+          </div>
+          {% if case.ticket_number %}
+          <div class="col-6">
+            <small class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;">Freshdesk</small>
+            <strong>#{{ case.ticket_number }}</strong>
+          </div>
+          {% endif %}
+          {% if case.resolved_at %}
+          <div class="col-6">
+            <small class="text-muted d-block" style="font-size:.75rem;text-transform:uppercase;">Resolved</small>
+            <strong>{{ case.resolved_at.strftime('%d %b %Y %H:%M') }}</strong>
+            {% if case.resolution_minutes is not none %}
+            <br><small class="text-muted">{{ case.resolution_minutes }} min total</small>
+            {% endif %}
+          </div>
+          {% endif %}
+        </div>
+        <hr class="border-secondary">
+        <p class="mb-0" style="white-space:pre-wrap;">{{ case.summary }}</p>
+      </div>
+    </div>
+
+    {# ── Workflow action buttons ── #}
+    {% if current_user.is_admin %}
+    <div class="card bg-dark border-secondary mb-3">
+      <div class="card-header border-secondary py-2">
+        <small class="text-muted text-uppercase" style="font-size:.75rem;letter-spacing:.06em;">Workflow Actions</small>
+      </div>
+      <div class="card-body">
+
+        {# Tier 1 actions #}
+        {% if case.tier_level == 1 and case.status not in ('resolved','closed') %}
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          {% if case.status == 'open' %}
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="investigate">
+            <button class="btn btn-sm action-btn btn-warning text-dark">
+              <i class="bi bi-search me-1"></i>Investigating
+            </button>
+          </form>
+          {% endif %}
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="escalate_t2">
+            <button class="btn btn-sm action-btn btn-outline-warning">
+              <i class="bi bi-arrow-up-circle me-1"></i>Escalate → Tier 2
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="escalate_t3">
+            <button class="btn btn-sm action-btn btn-outline-danger">
+              <i class="bi bi-arrow-up-circle-fill me-1"></i>Escalate → Tier 3 IPTV
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="resolve">
+            <button class="btn btn-sm action-btn btn-success">
+              <i class="bi bi-check-circle me-1"></i>Resolved
+            </button>
+          </form>
+        </div>
+        {% endif %}
+
+        {# Tier 2 actions #}
+        {% if case.tier_level == 2 and case.status not in ('resolved','closed') %}
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="working">
+            <button class="btn btn-sm action-btn btn-warning text-dark">
+              <i class="bi bi-wrench me-1"></i>Working
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="return_t1">
+            <button class="btn btn-sm action-btn btn-outline-secondary">
+              <i class="bi bi-arrow-down-circle me-1"></i>Return to Tier 1
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="escalate_t3">
+            <button class="btn btn-sm action-btn btn-outline-danger">
+              <i class="bi bi-arrow-up-circle-fill me-1"></i>Escalate → Tier 3 IPTV
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="resolve">
+            <button class="btn btn-sm action-btn btn-success">
+              <i class="bi bi-check-circle me-1"></i>Resolved
+            </button>
+          </form>
+        </div>
+        {% endif %}
+
+        {# Tier 3 actions #}
+        {% if case.tier_level == 3 and case.status not in ('resolved','closed') %}
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="investigate">
+            <button class="btn btn-sm action-btn btn-warning text-dark">
+              <i class="bi bi-eye me-1"></i>Reviewing
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="return_t1">
+            <button class="btn btn-sm action-btn btn-outline-secondary">
+              <i class="bi bi-arrow-down-circle me-1"></i>Return to Tier 1
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="resolve">
+            <button class="btn btn-sm action-btn btn-success">
+              <i class="bi bi-check-circle me-1"></i>Resolved
+            </button>
+          </form>
+        </div>
+        {% endif %}
+
+        {# Resolved/Closed: allow close or reopen #}
+        {% if case.status == 'resolved' %}
+        <div class="d-flex flex-wrap gap-2 mb-2">
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="close">
+            <button class="btn btn-sm action-btn btn-secondary">
+              <i class="bi bi-x-circle me-1"></i>Close Case
+            </button>
+          </form>
+          <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+            <input type="hidden" name="action" value="reopen">
+            <button class="btn btn-sm action-btn btn-outline-warning">
+              <i class="bi bi-arrow-counterclockwise me-1"></i>Re-open
+            </button>
+          </form>
+        </div>
+        {% endif %}
+        {% if case.status == 'closed' %}
+        <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-inline">
+          <input type="hidden" name="action" value="reopen">
+          <button class="btn btn-sm action-btn btn-outline-warning">
+            <i class="bi bi-arrow-counterclockwise me-1"></i>Re-open
+          </button>
+        </form>
+        {% endif %}
+
+        {# Resolution notes #}
+        <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="mt-3">
+          <input type="hidden" name="action" value="update_resolution">
+          <label class="form-label text-muted mb-1" style="font-size:.75rem;text-transform:uppercase;">Resolution Notes</label>
+          <textarea name="resolution_notes" class="form-control bg-dark text-white border-secondary"
+                    rows="3" placeholder="Root cause, steps taken, customer outcome…">{{ case.resolution_notes or '' }}</textarea>
+          <button type="submit" class="btn btn-sm btn-outline-secondary mt-2">Save Notes</button>
+        </form>
+      </div>
+    </div>
+
+    {# Reassign #}
+    <div class="card bg-dark border-secondary mb-3">
+      <div class="card-header border-secondary py-2">
+        <small class="text-muted text-uppercase" style="font-size:.75rem;">Assign Engineer</small>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-flex gap-2">
+          <input type="hidden" name="action" value="assign">
+          <select name="assigned_agent_id" class="form-select form-select-sm bg-dark text-white border-secondary">
+            <option value="">Unassigned</option>
+            {% for a in agents %}
+              <option value="{{ a.id }}" {{ 'selected' if case.assigned_agent_id == a.id }}>{{ a.name }}</option>
+            {% endfor %}
+          </select>
+          <button type="submit" class="btn btn-sm btn-outline-secondary" style="white-space:nowrap;">Update</button>
+        </form>
+      </div>
+    </div>
+    {% endif %}{# end is_admin #}
+
+    {# Add note (all roles) #}
+    <div class="card bg-dark border-secondary">
+      <div class="card-header border-secondary py-2">
+        <small class="text-muted text-uppercase" style="font-size:.75rem;">Add Note</small>
+      </div>
+      <div class="card-body">
+        <form method="post" action="{{ url_for('support_case_action', id=case.id) }}" class="d-flex gap-2">
+          <input type="hidden" name="action" value="add_note">
+          <input type="text" name="note" class="form-control form-control-sm bg-dark text-white border-secondary"
+                 placeholder="Add a comment or update…" required maxlength="500">
+          <button type="submit" class="btn btn-sm btn-outline-secondary" style="white-space:nowrap;">Post</button>
+        </form>
+      </div>
+    </div>
+
+  </div>{# end left col #}
+
+  {# ── RIGHT: Activity timeline ── #}
+  <div class="col-lg-5">
+    <div class="card bg-dark border-secondary h-100">
+      <div class="card-header border-secondary py-2">
+        <small class="text-muted text-uppercase" style="font-size:.75rem;letter-spacing:.06em;">Activity Timeline</small>
+      </div>
+      <div class="card-body overflow-auto" style="max-height:600px;">
+        {% if case.events %}
+          {% for ev in case.events|reverse %}
+          <div class="position-relative timeline-event mb-3">
+            <div class="d-flex justify-content-between mb-1">
+              <small class="fw-semibold" style="color:
+                {% if ev.event_type == 'status_change' %}#c9a84c
+                {% elif ev.event_type == 'escalation' %}#e76f51
+                {% else %}#adb5bd{% endif %};">
+                {% if ev.event_type == 'status_change' %}
+                  <i class="bi bi-arrow-right-circle me-1"></i>
+                  {{ ev.old_status or 'new' }} → {{ ev.new_status }}
+                {% elif ev.event_type == 'escalation' %}
+                  <i class="bi bi-exclamation-triangle me-1"></i>Escalation
+                {% else %}
+                  <i class="bi bi-chat-text me-1"></i>Note
+                {% endif %}
+              </small>
+              <small class="text-muted">{{ ev.created_at.strftime('%d %b %H:%M') }}</small>
+            </div>
+            {% if ev.note %}
+            <p class="mb-0 text-light" style="font-size:.85rem;">{{ ev.note }}</p>
+            {% endif %}
+            {% if ev.actor %}
+            <small class="text-muted" style="font-size:.75rem;">by {{ ev.actor.email }}</small>
+            {% endif %}
+          </div>
+          {% if not loop.last %}<hr class="border-secondary my-2">{% endif %}
+          {% endfor %}
+        {% else %}
+          <p class="text-muted text-center mt-4">No activity yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+</div>{# end row #}
+{% endblock %}
