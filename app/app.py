@@ -4279,6 +4279,67 @@ def _seed_official_site_registry():
         print(f'  Site registry: {created} created, {updated} fields filled in')
 
 
+def _seed_standby_team_members():
+    """Ensure current standby team members exist and are roster-enabled."""
+    standby_members = [
+        {
+            'name': 'Bjorn',
+            'email': '',
+            'standby_color': '#0f766e',
+            'standby_text_color': '#ffffff',
+            'standby_label': 'success',
+        },
+        {
+            'name': 'Nick',
+            'email': '',
+            'standby_color': '#2563eb',
+            'standby_text_color': '#ffffff',
+            'standby_label': 'primary',
+        },
+    ]
+
+    created = updated = 0
+    for rec in standby_members:
+        agent = Agent.query.filter_by(name=rec['name']).first()
+        if not agent:
+            agent = Agent(
+                name=rec['name'],
+                email=rec['email'],
+                active=True,
+                roster_enabled=True,
+                standby_color=rec['standby_color'],
+                standby_text_color=rec['standby_text_color'],
+                standby_label=rec['standby_label'],
+            )
+            db.session.add(agent)
+            created += 1
+            continue
+
+        changed = False
+        if not agent.active:
+            agent.active = True
+            changed = True
+        if not agent.roster_enabled:
+            agent.roster_enabled = True
+            changed = True
+        if not agent.email and rec['email']:
+            agent.email = rec['email']
+            changed = True
+        if not agent.standby_color or agent.standby_color == '#2a2f33':
+            agent.standby_color = rec['standby_color']
+            changed = True
+        if not agent.standby_text_color:
+            agent.standby_text_color = rec['standby_text_color']
+            changed = True
+        if not agent.standby_label:
+            agent.standby_label = rec['standby_label']
+            changed = True
+        if changed:
+            updated += 1
+
+    db.session.commit()
+    if created or updated:
+        print(f'  Standby agents: {created} created, {updated} updated')
 def init_db():
     with app.app_context():
         _ensure_reference_docs_folder()
@@ -4300,6 +4361,7 @@ def init_db():
         
         # Seed / upgrade the official site registry (runs every boot; safe to re-run)
         _seed_official_site_registry()
+        _seed_standby_team_members()
 
         # ── Seed users from SEED_USERS env var (runs on every startup; safe to leave set) ──
         # Format: email:password:role,email2:password2:role2
