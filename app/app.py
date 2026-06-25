@@ -4542,6 +4542,15 @@ def _run_sqlite_migrations(conn):
             ('priority_level',    "VARCHAR(20) DEFAULT 'normal'"),
             ('aps_offline',       'INTEGER DEFAULT 0'),
             ('notes',             'TEXT'),
+            ('province',          'VARCHAR(100)'),
+            ('backup_agent_id',   'INTEGER'),
+            ('site_status',       "VARCHAR(30) DEFAULT 'active'"),
+            ('sla_status',        "VARCHAR(20) DEFAULT 'unknown'"),
+            ('products_supported','TEXT'),
+            ('visit_frequency',   "VARCHAR(50) DEFAULT 'monthly'"),
+            ('next_due_date',     'DATE'),
+            ('follow_up_required','BOOLEAN DEFAULT 0'),
+            ('follow_up_owner',   'VARCHAR(120)'),
         ]:
             if _col not in s_cols:
                 conn.execute(_text(f'ALTER TABLE site ADD COLUMN {_col} {_type}'))
@@ -4592,6 +4601,7 @@ def _run_sqlite_migrations(conn):
     try:
         a_cols = [row[1] for row in conn.execute(_text('PRAGMA table_info(agent)'))]
         for _col, _type in [
+            ('freshdesk_agent_id',    'VARCHAR(50)'),
             ('roster_enabled',         'BOOLEAN DEFAULT 1'),
             ('standby_color',          'VARCHAR(20)'),
             ('standby_text_color',     'VARCHAR(20)'),
@@ -4627,6 +4637,15 @@ def _run_postgres_migrations(conn):
             ('priority_level',    "VARCHAR(20) DEFAULT 'normal'"),
         ('aps_offline',       'INTEGER DEFAULT 0'),
         ('notes',             'TEXT'),
+        ('province',          'VARCHAR(100)'),
+        ('backup_agent_id',   'INTEGER'),
+        ('site_status',       "VARCHAR(30) DEFAULT 'active'"),
+        ('sla_status',        "VARCHAR(20) DEFAULT 'unknown'"),
+        ('products_supported','TEXT'),
+        ('visit_frequency',   "VARCHAR(50) DEFAULT 'monthly'"),
+        ('next_due_date',     'DATE'),
+        ('follow_up_required','BOOLEAN DEFAULT FALSE'),
+        ('follow_up_owner',   'VARCHAR(120)'),
     ]:
         if not _col_exists('site', _col):
             conn.execute(_text(f'ALTER TABLE site ADD COLUMN {_col} {_type}'))
@@ -4661,6 +4680,7 @@ def _run_postgres_migrations(conn):
         conn.commit()
     # Standby / roster columns on agent table
     for _col, _type in [
+        ('freshdesk_agent_id',    'VARCHAR(50)'),
         ('roster_enabled',         'BOOLEAN DEFAULT TRUE'),
         ('standby_color',          'VARCHAR(20)'),
         ('standby_text_color',     'VARCHAR(20)'),
