@@ -1,4 +1,4 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block title %}Monthly Management Report - {{ selected_month }}{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
@@ -9,7 +9,7 @@
   <div class="col-md-3"><div class="card stat-card text-center success"><div class="number">{{ on_site_visits|length }}</div><div class="label">On-site Completed</div></div></div>
   <div class="col-md-3"><div class="card stat-card text-center"><div class="number" style="color:var(--warning-color)">{{ teams_visits|length }}</div><div class="label">Remote Completed</div></div></div>
   <div class="col-md-3"><div class="card stat-card text-center warning"><div class="number">{{ missed_sites|length }}</div><div class="label">Sites Missed</div></div></div>
-  <div class="col-md-3"><div class="card stat-card text-center"><div class="number">{{ open_followups|length }}</div><div class="label">Open Follow-ups</div></div></div>
+  <div class="col-md-3"><div class="card stat-card text-center"><div class="number">{{ open_followups|length }}</div><div class="label">Open Follow-ups</div></div></div><div class="col-md-3"><div class="card stat-card text-center"><div class="number">{{ no_recent_contact|length }}</div><div class="label">No Recent Contact</div></div></div><div class="col-md-3"><div class="card stat-card text-center"><div class="number">{{ excluded_sites|length }}</div><div class="label">Excluded Sites</div></div></div>
 </div>
 <div class="row g-4">
   <div class="col-lg-7"><div class="card"><div class="card-header"><i class="bi bi-people"></i> Activity by Support Person</div><div class="card-body p-0"><table class="table mb-0"><thead><tr><th>Support Person</th><th class="text-center">On-site</th><th class="text-center">Teams</th><th class="text-center">Total</th></tr></thead><tbody>{% for row in visits_by_agent %}<tr><td>{{ row.agent.name }}</td><td class="text-center">{{ row.on_site }}</td><td class="text-center">{{ row.teams }}</td><td class="text-center fw-semibold">{{ row.total }}</td></tr>{% endfor %}</tbody></table></div></div></div>

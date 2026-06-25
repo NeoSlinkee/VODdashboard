@@ -1,105 +1,18 @@
 ﻿{% extends 'base.html' %}
 {% block title %}Sites - {{ APP_NAME }}{% endblock %}
-
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-  <div>
-    <h2><i class="bi bi-building me-2" style="color:var(--vod-gold)"></i>Site Allocation</h2>
-    <p class="text-muted mb-0 small">Monthly on-site visits and Teams / remote check-ins</p>
-  </div>
-  <div class="d-flex gap-2">
-    <a href="{{ url_for('add_site') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle me-1"></i>Add Site</a>
-    <a href="{{ url_for('import_sites') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-upload me-1"></i>Import Allocations</a>
-  </div>
+  <div><h2><i class="bi bi-building me-2" style="color:var(--vod-gold)"></i>Site Allocation</h2><p class="text-muted mb-0 small">Active ownership, site status, SLA visibility, and monthly support requirements</p></div>
+  <div class="d-flex gap-2"><a href="{{ url_for('monthly_schedule') }}" class="btn btn-outline-primary btn-sm"><i class="bi bi-calendar2-week me-1"></i>Schedule</a><a href="{{ url_for('add_site') }}" class="btn btn-primary btn-sm"><i class="bi bi-plus-circle me-1"></i>Add Site</a><a href="{{ url_for('import_sites') }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-upload me-1"></i>Import</a></div>
 </div>
-
-<div class="row g-3 mb-4">
-  <div class="col-6 col-md-3"><div class="card stat-card text-center"><div class="number">{{ all_sites | length }}</div><div class="label">Total Sites</div></div></div>
-  <div class="col-6 col-md-3"><div class="card stat-card text-center success"><div class="number" style="color:var(--success-color)">{{ on_site_sites | length }}</div><div class="label">On-site</div></div></div>
-  <div class="col-6 col-md-3"><div class="card stat-card text-center"><div class="number" style="color:var(--warning-color)">{{ teams_sites | length }}</div><div class="label">Teams / Remote</div></div></div>
-  <div class="col-6 col-md-3"><div class="card stat-card text-center"><div class="number" style="color:#95a5a6">{{ inactive_count }}</div><div class="label">Inactive</div></div></div>
-</div>
-
-<div class="card mb-4">
-  <div class="card-body py-2">
-    <form method="get" class="row g-2 align-items-end">
-      <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Visit Type</label>
-        <select name="visit_type" class="form-select form-select-sm">
-          <option value="">All</option>
-          <option value="on_site" {% if visit_type_filter == 'on_site' %}selected{% endif %}>On-site</option>
-          <option value="teams" {% if visit_type_filter == 'teams' %}selected{% endif %}>Teams / Remote</option>
-        </select>
-      </div>
-      <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Support Person</label>
-        <select name="agent" class="form-select form-select-sm">
-          <option value="">All</option>
-          {% for a in agents %}<option value="{{ a.id }}" {% if agent_filter | string == a.id | string %}selected{% endif %}>{{ a.name }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">Priority</label>
-        <select name="priority" class="form-select form-select-sm">
-          <option value="">All</option>
-          <option value="high" {% if priority_filter == 'high' %}selected{% endif %}>High</option>
-          <option value="normal" {% if priority_filter == 'normal' %}selected{% endif %}>Normal</option>
-          <option value="low" {% if priority_filter == 'low' %}selected{% endif %}>Low</option>
-        </select>
-      </div>
-      <div class="col-6 col-md-2">
-        <label class="form-label small mb-1">City</label>
-        <select name="city" class="form-select form-select-sm">
-          <option value="">All</option>
-          {% for c in cities %}<option value="{{ c }}" {% if city_filter == c %}selected{% endif %}>{{ c }}</option>{% endfor %}
-        </select>
-      </div>
-      <div class="col-6 col-md-2 d-flex align-items-end gap-1">
-        <button type="submit" class="btn btn-secondary btn-sm flex-fill">Filter</button>
-        <a href="{{ url_for('sites') }}" class="btn btn-outline-secondary btn-sm">Clear</a>
-      </div>
-      <div class="col-6 col-md-2 d-flex align-items-end">
-        <div class="form-check form-switch mb-0">
-          <input class="form-check-input" type="checkbox" id="showInactive" name="show_inactive" value="1" {% if show_inactive %}checked{% endif %} onchange="this.form.submit()">
-          <label class="form-check-label small" for="showInactive">Show inactive</label>
-        </div>
-      </div>
-    </form>
-  </div>
-</div>
-
-{% if all_sites %}
-<div class="card">
-  <div class="table-responsive">
-    <table class="table table-hover align-middle mb-0">
-      <thead>
-        <tr>
-          <th>Site Name</th><th>Group</th><th>Location</th><th>Visit Type</th><th>Monthly Req.</th><th>Support Person</th><th>Latest Status</th><th>Last Notes</th><th class="text-end">Actions</th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for s in all_sites %}
-        {% set latest = latest_visits.get(s.id) %}
-        <tr {% if not s.active %}class="text-muted" style="opacity:.55"{% endif %}>
-          <td><span class="fw-semibold">{{ s.name }}</span>{% if s.ruckus_zone_name and s.ruckus_zone_name != s.name %}<br><small class="text-muted">{{ s.ruckus_zone_name }}</small>{% endif %}</td>
-          <td>{% if s.brand %}<span class="badge bg-primary">{{ s.brand }}</span>{% else %}<span class="text-muted">-</span>{% endif %}</td>
-          <td>{{ s.city or '-' }}</td>
-          <td>{% if (s.visit_type or s.region) in ['teams','far_reach'] %}<span class="badge" style="background:var(--warning-color)">Teams / Remote</span>{% else %}<span class="badge" style="background:var(--success-color)">On-site</span>{% endif %}</td>
-          <td>{{ s.monthly_requirement or 1 }} / month{% if s.allocation_month %}<br><small class="text-muted">{{ s.allocation_month }}</small>{% endif %}</td>
-          <td>{% if s.assigned_agent %}<span class="badge" style="background:var(--vod-charcoal)">{{ s.assigned_agent.name }}</span>{% else %}<span class="text-muted small">Unassigned</span>{% endif %}</td>
-          <td>{% if latest %}<span class="badge bg-success">Completed</span><br><small class="text-muted">{{ latest.date }}</small>{% else %}<span class="badge bg-secondary">Pending</span>{% endif %}</td>
-          <td class="small">{% if latest %}{{ (latest.notes or latest.follow_up_actions or latest.discussion_topics or '')[:80] }}{% else %}{{ (s.notes or '')[:80] }}{% endif %}</td>
-          <td class="text-end text-nowrap">
-            <a href="{{ url_for('edit_site', id=s.id) }}" class="btn btn-outline-secondary btn-sm me-1" title="Edit"><i class="bi bi-pencil"></i></a>
-            <a href="{{ url_for('toggle_site', id=s.id) }}" class="btn btn-sm {% if s.active %}btn-outline-warning{% else %}btn-outline-success{% endif %}" title="{{ 'Deactivate' if s.active else 'Activate' }}"><i class="bi bi-{% if s.active %}pause{% else %}play{% endif %}"></i></a>
-          </td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% else %}
-<div class="text-center text-muted py-5"><i class="bi bi-building fs-1 d-block mb-2"></i>No sites found matching the current filters.</div>
-{% endif %}
+<div class="row g-3 mb-4"><div class="col-6 col-md-3"><div class="card stat-card text-center"><div class="number">{{ all_sites|length }}</div><div class="label">Visible Sites</div></div></div><div class="col-6 col-md-3"><div class="card stat-card text-center success"><div class="number" style="color:var(--success-color)">{{ on_site_sites|length }}</div><div class="label">On-site</div></div></div><div class="col-6 col-md-3"><div class="card stat-card text-center"><div class="number" style="color:var(--warning-color)">{{ teams_sites|length }}</div><div class="label">Teams / Remote</div></div></div><div class="col-6 col-md-3"><div class="card stat-card text-center"><div class="number" style="color:#95a5a6">{{ inactive_count }}</div><div class="label">Inactive</div></div></div></div>
+<div class="card mb-4"><div class="card-body py-2"><form method="get" class="row g-2 align-items-end">
+  <div class="col-6 col-md-2"><label class="form-label small mb-1">Visit Type</label><select name="visit_type" class="form-select form-select-sm"><option value="">All</option><option value="on_site" {% if visit_type_filter == 'on_site' %}selected{% endif %}>On-site</option><option value="teams" {% if visit_type_filter == 'teams' %}selected{% endif %}>Teams / Remote</option></select></div>
+  <div class="col-6 col-md-2"><label class="form-label small mb-1">Owner</label><select name="agent" class="form-select form-select-sm"><option value="">All</option>{% for a in agents %}<option value="{{ a.id }}" {% if agent_filter|string == a.id|string %}selected{% endif %}>{{ a.name }}</option>{% endfor %}</select></div>
+  <div class="col-6 col-md-2"><label class="form-label small mb-1">Site Status</label><select name="site_status" class="form-select form-select-sm"><option value="">All</option>{% for key,label in site_statuses.items() %}<option value="{{ key }}" {% if status_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div class="col-6 col-md-2"><label class="form-label small mb-1">SLA</label><select name="sla_status" class="form-select form-select-sm"><option value="">All</option>{% for key,label in sla_statuses.items() %}<option value="{{ key }}" {% if sla_filter == key %}selected{% endif %}>{{ label }}</option>{% endfor %}</select></div>
+  <div class="col-6 col-md-2"><label class="form-label small mb-1">City</label><select name="city" class="form-select form-select-sm"><option value="">All</option>{% for c in cities %}<option value="{{ c }}" {% if city_filter == c %}selected{% endif %}>{{ c }}</option>{% endfor %}</select></div>
+  <div class="col-6 col-md-2 d-flex gap-1"><button class="btn btn-secondary btn-sm flex-fill">Filter</button><a href="{{ url_for('sites') }}" class="btn btn-outline-secondary btn-sm">Clear</a></div>
+</form></div></div>
+{% if all_sites %}<div class="card"><div class="table-responsive"><table class="table table-hover align-middle mb-0"><thead><tr><th>Site</th><th>Location</th><th>Status</th><th>Type</th><th>Owner</th><th>Backup</th><th>SLA</th><th>Products</th><th>Latest</th><th class="text-end">Actions</th></tr></thead><tbody>{% for s in all_sites %}{% set latest = latest_visits.get(s.id) %}<tr {% if s.site_status != 'active' or not s.active %}class="text-muted" style="opacity:.65"{% endif %}><td><strong>{{ s.name }}</strong><br><small class="text-muted">{{ s.brand or '' }}</small></td><td>{{ s.city or '-' }}{% if s.province %}<br><small class="text-muted">{{ s.province }}</small>{% endif %}</td><td><span class="badge {% if s.site_status == 'active' %}bg-success{% elif s.site_status == 'pending_confirmation' %}bg-warning text-dark{% else %}bg-secondary{% endif %}">{{ site_status_label(s.site_status) }}</span></td><td><span class="badge {% if s.visit_type == 'teams' %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ visit_type_label(s.visit_type or s.region) }}</span><br><small>{{ s.monthly_requirement or 0 }}/month</small></td><td>{{ s.assigned_agent.name if s.assigned_agent else 'Unassigned' }}</td><td>{{ s.backup_agent.name if s.backup_agent else '-' }}</td><td>{{ sla_status_label(s.sla_status) }}</td><td class="small">{{ (s.products_supported or '-')[:60] }}</td><td>{% if latest %}<span class="badge bg-success">Completed</span><br><small>{{ latest.date }}</small>{% else %}<span class="badge bg-secondary">Pending</span>{% endif %}</td><td class="text-end"><a href="{{ url_for('edit_site', id=s.id) }}" class="btn btn-outline-secondary btn-sm"><i class="bi bi-pencil"></i></a></td></tr>{% endfor %}</tbody></table></div></div>{% else %}<div class="text-center text-muted py-5">No sites found.</div>{% endif %}
 {% endblock %}

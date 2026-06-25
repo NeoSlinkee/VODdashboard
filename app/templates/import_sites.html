@@ -1,4 +1,4 @@
-﻿{% extends 'base.html' %}
+{% extends 'base.html' %}
 {% block title %}Import Allocations - {{ APP_NAME }}{% endblock %}
 {% block content %}
 <h2 class="mb-4"><i class="bi bi-upload"></i> Import Site Allocations</h2>
@@ -24,10 +24,10 @@
     <div class="card bg-light"><div class="card-body">
       <h6><i class="bi bi-info-circle"></i> CSV headers</h6>
       <p class="small mb-2">Recommended columns:</p>
-      <pre class="bg-dark text-light p-2 rounded small"><code>site_name,support_person,visit_type,monthly_requirement,month,group,location,notes</code></pre>
+      <pre class="bg-dark text-light p-2 rounded small"><code>site_name,support_person,backup_owner,visit_type,site_status,sla_status,province,products_supported,monthly_requirement,month,group,location,notes</code></pre>
       <ul class="small mb-0">
         <li><code>visit_type</code>: <code>on_site</code>, <code>teams</code>, <code>remote</code>, <code>within_reach</code>, or <code>far_reach</code>.</li>
-        <li><code>support_person</code> must match an active team member name.</li>
+        <li><code>support_person</code> and <code>backup_owner</code> must match active team member names.</li>
         <li><code>month</code> should be <code>YYYY-MM</code>.</li>
       </ul>
     </div></div>

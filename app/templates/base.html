@@ -355,6 +355,9 @@
                     <a class="nav-link {{ 'active' if request.endpoint in ('site_visits', 'add_site_visit') else '' }}" href="{{ url_for('site_visits') }}">
                         <i class="bi bi-geo-alt"></i> Site Visits
                     </a>
+                    <a class="nav-link {{ 'active' if 'monthly_schedule' in request.endpoint else '' }}" href="{{ url_for('monthly_schedule') }}">
+                        <i class="bi bi-calendar2-week"></i> Monthly Schedule
+                    </a>
                     <a class="nav-link {{ 'active' if request.endpoint in ('service_calls', 'add_service_call', 'bulk_service_calls') else '' }}" href="{{ url_for('service_calls') }}">
                         <i class="bi bi-headset"></i> Service Calls
                     </a>

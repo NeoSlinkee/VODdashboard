@@ -191,6 +191,51 @@ def visit_type_label(value):
     return VISIT_TYPE_LABELS.get(value, VISIT_TYPE_LABELS.get(normalize_visit_type(value), 'On-site'))
 
 
+
+SITE_STATUS_LABELS = {
+    'active': 'Active',
+    'inactive': 'Inactive',
+    'former_customer': 'Former Customer',
+    'project_only': 'Project Only',
+    'pending_confirmation': 'Pending Confirmation',
+}
+
+SLA_STATUS_LABELS = {
+    'yes': 'Yes',
+    'no': 'No',
+    'unknown': 'Unknown',
+}
+
+
+def normalize_site_status(value):
+    raw = (value or '').strip().lower().replace('-', '_').replace(' ', '_')
+    if raw in ('inactive', 'disabled'):
+        return 'inactive'
+    if raw in ('former', 'former_customer', 'former_client'):
+        return 'former_customer'
+    if raw in ('project', 'project_only'):
+        return 'project_only'
+    if raw in ('pending', 'pending_confirmation', 'tbc'):
+        return 'pending_confirmation'
+    return 'active'
+
+
+def site_status_label(value):
+    return SITE_STATUS_LABELS.get(value, SITE_STATUS_LABELS.get(normalize_site_status(value), 'Active'))
+
+
+def normalize_sla_status(value):
+    raw = (value or '').strip().lower()
+    if raw in ('yes', 'y', 'true', 'covered'):
+        return 'yes'
+    if raw in ('no', 'n', 'false', 'not covered'):
+        return 'no'
+    return 'unknown'
+
+
+def sla_status_label(value):
+    return SLA_STATUS_LABELS.get(value, 'Unknown')
+
 # Build matching indexes for exact, normalized, and fuzzy site matching.
 SITE_BY_CANONICAL = {}
 ALIAS_TO_SITE = {}
@@ -304,6 +349,8 @@ def inject_brand():
         'APP_LOGO': get_config('app_logo'),       # base64 data-URI or None
         'COMPANY_NAME': get_config('company_name', 'VODGroup'),
         'visit_type_label': visit_type_label,
+        'site_status_label': site_status_label,
+        'sla_status_label': sla_status_label,
     }
 
 
@@ -355,12 +402,21 @@ class Site(db.Model):
     name        = db.Column(db.String(200), nullable=False, unique=True)
     brand       = db.Column(db.String(100))          # Property group / brand
     city        = db.Column(db.String(100))
+    province    = db.Column(db.String(100))
     region      = db.Column(db.String(50))            # legacy: 'within_reach' | 'far_reach'
     visit_type  = db.Column(db.String(20), default='on_site')  # 'on_site' | 'teams'
     monthly_requirement = db.Column(db.Integer, default=1)
     allocation_month = db.Column(db.String(7))  # YYYY-MM for imported monthly allocation
     ruckus_zone_name = db.Column(db.String(200))      # SmartZone alias for CSV matching
     assigned_agent_id = db.Column(db.Integer, db.ForeignKey('agent.id'), nullable=True)
+    backup_agent_id = db.Column(db.Integer, db.ForeignKey('agent.id'), nullable=True)
+    site_status = db.Column(db.String(30), default='active')
+    sla_status = db.Column(db.String(20), default='unknown')
+    products_supported = db.Column(db.Text)
+    visit_frequency = db.Column(db.String(50), default='monthly')
+    next_due_date = db.Column(db.Date)
+    follow_up_required = db.Column(db.Boolean, default=False)
+    follow_up_owner = db.Column(db.String(120))
     priority_level = db.Column(db.String(20), default='normal')  # low / normal / high
     total_aps   = db.Column(db.Integer, default=0)
     aps_offline = db.Column(db.Integer, default=0)    # cached from latest Ruckus import
@@ -371,6 +427,8 @@ class Site(db.Model):
     monitoring_logs    = db.relationship('MonitoringLog', backref='site', lazy=True)
     assigned_agent     = db.relationship('Agent', foreign_keys=[assigned_agent_id],
                                          backref='assigned_sites')
+    backup_agent       = db.relationship('Agent', foreign_keys=[backup_agent_id],
+                                         backref='backup_sites')
 
 class MonitoringLog(db.Model):
     """Auto-populated from Ruckus data."""
@@ -1636,10 +1694,12 @@ def site_health():
 @login_required
 def sites():
     visit_type_filter = request.args.get('visit_type', request.args.get('reach', ''))
-    agent_filter      = request.args.get('agent', '')
-    priority_filter   = request.args.get('priority', '')
-    city_filter       = request.args.get('city', '')
-    show_inactive     = request.args.get('show_inactive') == '1'
+    agent_filter = request.args.get('agent', '')
+    priority_filter = request.args.get('priority', '')
+    city_filter = request.args.get('city', '')
+    status_filter = request.args.get('site_status', '')
+    sla_filter = request.args.get('sla_status', '')
+    show_inactive = request.args.get('show_inactive') == '1'
 
     q = Site.query
     if not show_inactive:
@@ -1652,6 +1712,10 @@ def sites():
         q = q.filter(Site.priority_level == priority_filter)
     if city_filter:
         q = q.filter(Site.city == city_filter)
+    if status_filter:
+        q = q.filter(Site.site_status == normalize_site_status(status_filter))
+    if sla_filter:
+        q = q.filter(Site.sla_status == normalize_sla_status(sla_filter))
 
     all_sites = q.order_by(Site.visit_type, Site.name).all()
     on_site_sites = [s for s in all_sites if normalize_visit_type(s.visit_type or s.region) == 'on_site']
@@ -1683,6 +1747,10 @@ def sites():
         agent_filter=agent_filter,
         priority_filter=priority_filter,
         city_filter=city_filter,
+        status_filter=status_filter,
+        sla_filter=sla_filter,
+        site_statuses=SITE_STATUS_LABELS,
+        sla_statuses=SLA_STATUS_LABELS,
     )
 
 
@@ -1696,21 +1764,32 @@ def add_site():
             flash('Site name is required.', 'warning')
             return render_template('add_site.html', agents=agents)
         agent_id_raw = request.form.get('assigned_agent_id', '').strip()
+        backup_id_raw = request.form.get('backup_agent_id', '').strip()
         visit_type = normalize_visit_type(request.form.get('visit_type'))
+        site_status = normalize_site_status(request.form.get('site_status'))
         site = Site(
             name=name,
             brand=request.form.get('brand', '').strip() or None,
             city=request.form.get('city', '').strip() or None,
+            province=request.form.get('province', '').strip() or None,
             region='within_reach' if visit_type == 'on_site' else 'far_reach',
             visit_type=visit_type,
             monthly_requirement=int(request.form.get('monthly_requirement', 1) or 1),
             allocation_month=request.form.get('allocation_month', '').strip() or None,
             ruckus_zone_name=request.form.get('ruckus_zone_name', '').strip() or name,
             assigned_agent_id=int(agent_id_raw) if agent_id_raw.isdigit() else None,
+            backup_agent_id=int(backup_id_raw) if backup_id_raw.isdigit() else None,
+            site_status=site_status,
+            sla_status=normalize_sla_status(request.form.get('sla_status')),
+            products_supported=request.form.get('products_supported', '').strip() or None,
+            visit_frequency=request.form.get('visit_frequency', 'monthly').strip() or 'monthly',
+            next_due_date=_parse_iso_date(request.form.get('next_due_date', '').strip()),
+            follow_up_required=request.form.get('follow_up_required') == 'yes',
+            follow_up_owner=request.form.get('follow_up_owner', '').strip() or None,
             priority_level=request.form.get('priority_level', 'normal'),
             total_aps=int(request.form.get('total_aps', 0) or 0),
             notes=request.form.get('notes', '').strip() or None,
-            active=True,
+            active=site_status == 'active',
         )
         db.session.add(site)
         db.session.commit()
@@ -1726,15 +1805,26 @@ def edit_site(id):
     agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
     if request.method == 'POST':
         agent_id_raw = request.form.get('assigned_agent_id', '').strip()
+        backup_id_raw = request.form.get('backup_agent_id', '').strip()
         site.name = request.form.get('name', site.name).strip()
         site.brand = request.form.get('brand', '').strip() or None
         site.city = request.form.get('city', '').strip() or None
+        site.province = request.form.get('province', '').strip() or None
         site.visit_type = normalize_visit_type(request.form.get('visit_type', site.visit_type or site.region))
         site.region = 'within_reach' if site.visit_type == 'on_site' else 'far_reach'
         site.monthly_requirement = int(request.form.get('monthly_requirement', site.monthly_requirement or 1) or 1)
         site.allocation_month = request.form.get('allocation_month', '').strip() or None
         site.ruckus_zone_name = request.form.get('ruckus_zone_name', '').strip() or site.name
         site.assigned_agent_id = int(agent_id_raw) if agent_id_raw.isdigit() else None
+        site.backup_agent_id = int(backup_id_raw) if backup_id_raw.isdigit() else None
+        site.site_status = normalize_site_status(request.form.get('site_status'))
+        site.active = site.site_status == 'active'
+        site.sla_status = normalize_sla_status(request.form.get('sla_status'))
+        site.products_supported = request.form.get('products_supported', '').strip() or None
+        site.visit_frequency = request.form.get('visit_frequency', 'monthly').strip() or 'monthly'
+        site.next_due_date = _parse_iso_date(request.form.get('next_due_date', '').strip())
+        site.follow_up_required = request.form.get('follow_up_required') == 'yes'
+        site.follow_up_owner = request.form.get('follow_up_owner', '').strip() or None
         site.priority_level = request.form.get('priority_level', 'normal')
         site.total_aps = int(request.form.get('total_aps', 0) or 0)
         site.notes = request.form.get('notes', '').strip() or None
@@ -1755,6 +1845,8 @@ def import_sites():
             raw = uploaded.read().decode('utf-8-sig')
             reader = csv.DictReader(StringIO(raw))
             created = updated = skipped = 0
+            inactive_owner_rows = 0
+            missing_owner_rows = 0
             for row in reader:
                 cleaned = {(k or '').strip().lower().replace(' ', '_'): (v or '').strip() for k, v in row.items()}
                 site_name = cleaned.get('site_name') or cleaned.get('site') or cleaned.get('name')
@@ -1762,10 +1854,12 @@ def import_sites():
                     skipped += 1
                     continue
 
-                agent_name = cleaned.get('support_person') or cleaned.get('assigned_support_person') or cleaned.get('agent') or cleaned.get('engineer')
-                assigned_agent = None
-                if agent_name:
-                    assigned_agent = Agent.query.filter(db.func.lower(Agent.name) == agent_name.lower()).first()
+                agent_name = cleaned.get('support_person') or cleaned.get('primary_owner') or cleaned.get('assigned_support_person') or cleaned.get('agent') or cleaned.get('engineer')
+                assigned_agent = Agent.query.filter(db.func.lower(Agent.name) == agent_name.lower()).first() if agent_name else None
+                if agent_name and (not assigned_agent or not assigned_agent.active):
+                    inactive_owner_rows += 1
+                if not agent_name:
+                    missing_owner_rows += 1
 
                 visit_type = normalize_visit_type(cleaned.get('visit_type') or cleaned.get('type') or cleaned.get('reach'))
                 site = Site.query.filter(db.func.lower(Site.name) == site_name.lower()).first()
@@ -1778,17 +1872,32 @@ def import_sites():
 
                 site.brand = cleaned.get('group') or cleaned.get('customer') or cleaned.get('brand') or site.brand
                 site.city = cleaned.get('physical_location') or cleaned.get('location') or cleaned.get('city') or site.city
+                site.province = cleaned.get('province') or site.province
                 site.region = 'within_reach' if visit_type == 'on_site' else 'far_reach'
                 site.visit_type = visit_type
                 site.monthly_requirement = int(cleaned.get('monthly_requirement') or cleaned.get('frequency') or site.monthly_requirement or 1)
                 site.allocation_month = cleaned.get('month') or cleaned.get('allocation_month') or site.allocation_month
+                site.site_status = normalize_site_status(cleaned.get('site_status') or cleaned.get('status') or site.site_status)
+                site.active = site.site_status == 'active'
+                site.sla_status = normalize_sla_status(cleaned.get('sla_status') or cleaned.get('sla') or site.sla_status)
+                site.products_supported = cleaned.get('products_supported') or cleaned.get('products') or site.products_supported
+                site.visit_frequency = cleaned.get('visit_frequency') or site.visit_frequency or 'monthly'
+                if assigned_agent and assigned_agent.active:
+                    site.assigned_agent_id = assigned_agent.id
+                backup_name = cleaned.get('backup_owner') or cleaned.get('backup')
+                if backup_name:
+                    backup_agent = Agent.query.filter(db.func.lower(Agent.name) == backup_name.lower()).first()
+                    if backup_agent and backup_agent.active:
+                        site.backup_agent_id = backup_agent.id
                 site.notes = cleaned.get('notes') or site.notes
                 site.ruckus_zone_name = cleaned.get('ruckus_zone_name') or site.ruckus_zone_name or site.name
-                if assigned_agent:
-                    site.assigned_agent_id = assigned_agent.id
 
             db.session.commit()
             flash(f'Allocation import complete: {created} created, {updated} updated, {skipped} skipped.', 'success')
+            if inactive_owner_rows:
+                flash(f'{inactive_owner_rows} row(s) referenced inactive or unknown owners and were left unassigned.', 'warning')
+            if missing_owner_rows:
+                flash(f'{missing_owner_rows} active row(s) had no primary owner.', 'warning')
             return redirect(url_for('sites'))
 
         try:
@@ -1806,6 +1915,7 @@ def import_sites():
                             ruckus_zone_name=site_name,
                             monthly_requirement=1,
                             active=True,
+                            site_status='active',
                         )
                         db.session.add(site)
                         count += 1
@@ -1815,7 +1925,6 @@ def import_sites():
         except Exception as e:
             flash(f'Import failed: {str(e)}', 'danger')
     return render_template('import_sites.html', agents=agents)
-
 @app.route('/sites/<int:id>/toggle')
 @login_required
 def toggle_site(id):
@@ -2572,6 +2681,80 @@ def export_summary():
     )
 
 
+@app.route('/monthly-schedule')
+def monthly_schedule():
+    import calendar as cal_mod
+    selected_month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    agent_filter = request.args.get('agent', '')
+    region_filter = request.args.get('region', '')
+    visit_type_filter = request.args.get('visit_type', '')
+    status_filter = request.args.get('site_status', 'active')
+    sla_filter = request.args.get('sla_status', '')
+    try:
+        year, month = [int(part) for part in selected_month.split('-', 1)]
+        first_day = datetime(year, month, 1).date()
+    except Exception:
+        first_day = datetime.now().replace(day=1).date()
+        selected_month = first_day.strftime('%Y-%m')
+    last_day = first_day.replace(day=cal_mod.monthrange(first_day.year, first_day.month)[1])
+
+    q = Site.query
+    if status_filter:
+        q = q.filter(Site.site_status == normalize_site_status(status_filter))
+    if status_filter == 'active':
+        q = q.filter(Site.active == True, Site.monthly_requirement > 0)
+    if agent_filter:
+        q = q.filter(Site.assigned_agent_id == int(agent_filter))
+    if region_filter:
+        q = q.filter((Site.province == region_filter) | (Site.city == region_filter) | (Site.region == region_filter))
+    if visit_type_filter:
+        q = q.filter(Site.visit_type == normalize_visit_type(visit_type_filter))
+    if sla_filter:
+        q = q.filter(Site.sla_status == normalize_sla_status(sla_filter))
+
+    sites_for_schedule = q.order_by(Site.assigned_agent_id, Site.visit_type, Site.name).all()
+    site_ids = [s.id for s in sites_for_schedule]
+    visits_by_site = {}
+    if site_ids:
+        visits = SiteVisit.query.filter(
+            SiteVisit.site_id.in_(site_ids),
+            SiteVisit.date >= first_day,
+            SiteVisit.date <= last_day
+        ).order_by(SiteVisit.date.desc()).all()
+        for visit in visits:
+            visits_by_site.setdefault(visit.site_id, visit)
+
+    rows = []
+    today = datetime.now().date()
+    for site in sites_for_schedule:
+        latest = visits_by_site.get(site.id)
+        if site.site_status != 'active' or not site.active or not site.monthly_requirement:
+            status = 'Not Required'
+        elif latest:
+            status = 'Completed'
+        elif last_day < today:
+            status = 'Missed'
+        else:
+            status = 'Pending'
+        rows.append({'site': site, 'latest': latest, 'status': status, 'due_date': site.next_due_date or last_day})
+
+    agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
+    regions = sorted({value for pair in db.session.query(Site.province, Site.city).all() for value in pair if value})
+    return render_template('monthly_schedule.html',
+        rows=rows,
+        selected_month=selected_month,
+        month_name=cal_mod.month_name[first_day.month],
+        year=first_day.year,
+        agents=agents,
+        regions=regions,
+        site_statuses=SITE_STATUS_LABELS,
+        sla_statuses=SLA_STATUS_LABELS,
+        agent_filter=agent_filter,
+        region_filter=region_filter,
+        visit_type_filter=visit_type_filter,
+        status_filter=status_filter,
+        sla_filter=sla_filter)
+
 @app.route('/monthly-report')
 def monthly_report():
     import calendar as cal_mod
@@ -2589,6 +2772,8 @@ def monthly_report():
     teams_visits = [v for v in visits if normalize_visit_type(v.visit_type) == 'teams']
 
     assigned_sites = Site.query.filter_by(active=True).filter(Site.monthly_requirement > 0).order_by(Site.name).all()
+    excluded_sites = Site.query.filter(Site.site_status.in_(['inactive', 'former_customer', 'project_only'])).order_by(Site.name).all()
+    no_recent_contact = [s for s in assigned_sites if not s.visits]
     completed_site_ids = {v.site_id for v in visits if v.site_id}
     missed_sites = [s for s in assigned_sites if s.id not in completed_site_ids]
     open_followups = [v for v in visits if v.follow_up_required]
@@ -2638,6 +2823,8 @@ def monthly_report():
         teams_visits=teams_visits,
         assigned_sites=assigned_sites,
         missed_sites=missed_sites,
+        excluded_sites=excluded_sites,
+        no_recent_contact=no_recent_contact,
         open_followups=open_followups,
         visits_by_agent=visits_by_agent,
         standby_by_agent=standby_by_agent,
@@ -2658,6 +2845,7 @@ def export_monthly_report():
 
     visits = SiteVisit.query.filter(SiteVisit.date >= first_day, SiteVisit.date <= last_day).order_by(SiteVisit.date.asc()).all()
     assigned_sites = Site.query.filter_by(active=True).filter(Site.monthly_requirement > 0).order_by(Site.name).all()
+    excluded_sites = Site.query.filter(Site.site_status.in_(['inactive', 'former_customer', 'project_only'])).order_by(Site.name).all()
     completed_site_ids = {v.site_id for v in visits if v.site_id}
     missed_sites = [s for s in assigned_sites if s.id not in completed_site_ids]
     followups = [v for v in visits if v.follow_up_required]
@@ -2686,6 +2874,11 @@ def export_monthly_report():
             visit.follow_up_owner or '',
             visit.follow_up_due_date.isoformat() if visit.follow_up_due_date else '',
         ])
+    writer.writerow([])
+    writer.writerow(['Excluded from active schedule'])
+    writer.writerow(['Site', 'Status', 'Primary owner', 'Notes'])
+    for site in excluded_sites:
+        writer.writerow([site.name, site_status_label(site.site_status), site.assigned_agent.name if site.assigned_agent else '', site.notes or ''])
     writer.writerow([])
     writer.writerow(['Missed allocated sites'])
     writer.writerow(['Support person', 'Site', 'Visit type', 'Monthly requirement', 'Notes'])
@@ -4596,7 +4789,7 @@ def _seed_standby_team_members():
             'standby_label': 'success',
         },
         {
-            'name': 'Nick',
+            'name': 'Nicholas',
             'email': '',
             'standby_color': '#2563eb',
             'standby_text_color': '#ffffff',
@@ -4646,6 +4839,158 @@ def _seed_standby_team_members():
     db.session.commit()
     if created or updated:
         print(f'  Standby agents: {created} created, {updated} updated')
+def _agent_by_name(name):
+    return Agent.query.filter(db.func.lower(Agent.name) == name.lower()).first()
+
+
+def _ensure_agent(name, color='#2a2f33', label='secondary', active=True, roster_enabled=True):
+    agent = _agent_by_name(name)
+    if not agent:
+        agent = Agent(name=name, email='', active=active, roster_enabled=roster_enabled,
+                      standby_color=color, standby_text_color='#ffffff', standby_label=label)
+        db.session.add(agent)
+        db.session.flush()
+    else:
+        agent.active = active
+        agent.roster_enabled = roster_enabled
+        if not agent.standby_color or agent.standby_color == '#2a2f33':
+            agent.standby_color = color
+        if not agent.standby_text_color:
+            agent.standby_text_color = '#ffffff'
+        if not agent.standby_label:
+            agent.standby_label = label
+    return agent
+
+
+def _upsert_support_site(name, owner_name, visit_type, city='', province='', region='', backup_name='', status='active', notes=''):
+    owner = _agent_by_name(owner_name) if owner_name else None
+    backup = _agent_by_name(backup_name) if backup_name else None
+    site = Site.query.filter(db.func.lower(Site.name) == name.lower()).first()
+    if not site:
+        site = Site(name=name, ruckus_zone_name=name, active=True)
+        db.session.add(site)
+        db.session.flush()
+    site.assigned_agent_id = owner.id if owner else None
+    site.backup_agent_id = backup.id if backup else None
+    site.visit_type = normalize_visit_type(visit_type)
+    site.region = region or ('within_reach' if site.visit_type == 'on_site' else 'far_reach')
+    site.city = city or site.city
+    site.province = province or site.province
+    site.site_status = normalize_site_status(status)
+    site.active = site.site_status == 'active'
+    site.monthly_requirement = 1 if site.active else 0
+    site.visit_frequency = 'monthly'
+    site.sla_status = site.sla_status or 'unknown'
+    site.notes = notes or site.notes
+    return site
+
+
+def _seed_support_allocations():
+    """Apply current support team and active recurring allocation rules."""
+    team = [
+        ('Chris', '#1a73e8', 'primary'),
+        ('Kudzayi', '#2e7d32', 'success'),
+        ('Bjorn', '#0f766e', 'success'),
+        ('Nicholas', '#2563eb', 'primary'),
+    ]
+    for name, color, label in team:
+        _ensure_agent(name, color=color, label=label, active=True, roster_enabled=True)
+
+    nick = _agent_by_name('Nick')
+    nicholas = _agent_by_name('Nicholas')
+    if nick and nicholas and nick.id != nicholas.id:
+        DutyRoster.query.filter_by(agent_name='Nick').update({'agent_name': 'Nicholas'})
+        StandbyClaim.query.filter_by(agent_name='Nick').update({'agent_name': 'Nicholas'})
+        LeaveRequest.query.filter_by(agent_name='Nick').update({'agent_name': 'Nicholas'})
+        for model, column in [(Site, Site.assigned_agent_id), (Site, Site.backup_agent_id), (SiteVisit, SiteVisit.agent_id), (TicketStats, TicketStats.agent_id), (WeeklyReport, WeeklyReport.agent_id), (ServiceCall, ServiceCall.agent_id)]:
+            model.query.filter(column == nick.id).update({column.key: nicholas.id}, synchronize_session=False)
+        User.query.filter_by(agent_id=nick.id).update({'agent_id': nicholas.id})
+        nick.active = False
+        nick.roster_enabled = False
+    elif nick and not nicholas:
+        nick.name = 'Nicholas'
+        nick.active = True
+        nick.roster_enabled = True
+
+    for former in ('Koketso', 'Armand'):
+        agent = _agent_by_name(former)
+        if agent:
+            agent.active = False
+            agent.roster_enabled = False
+
+    excluded = [
+        'Garden Court Morningside Sandton',
+        'Stay Easy Pretoria',
+        'Southern Sun Pretoria',
+        'Garden Court EastGate',
+        'Stay Easy EastGate',
+        'Garden Court OR Tambo',
+        'IC Airport OR Tambo',
+        'InterContinental OR Tambo',
+        'SS OR Tambo',
+        'Southern Sun OR Tambo',
+    ]
+    for name in excluded:
+        site = Site.query.filter(db.func.lower(Site.name) == name.lower()).first()
+        if site:
+            site.site_status = 'inactive'
+            site.active = False
+            site.monthly_requirement = 0
+            site.notes = (site.notes or 'Excluded from active recurring monthly schedule.')
+
+    allocations = [
+        # Chris - Johannesburg/Gauteng on-site
+        ('Piazza Montecasino', 'Chris', 'on_site', 'Fourways', 'Gauteng'),
+        ('Palazzo Montecasino', 'Chris', 'on_site', 'Fourways', 'Gauteng'),
+        ('Pivot Montecasino', 'Chris', 'on_site', 'Fourways', 'Gauteng'),
+        ('Riverside Sun', 'Chris', 'on_site', 'Vanderbijlpark', 'Gauteng'),
+        # Cape Town on-site split
+        ('Christelle House SA', 'Kudzayi', 'on_site', 'Cape Town', 'Western Cape'),
+        ('SS Newlands', 'Kudzayi', 'on_site', 'Cape Town', 'Western Cape'),
+        ('Stay Easy Century City', 'Kudzayi', 'on_site', 'Cape Town', 'Western Cape'),
+        ('Stay Easy Cape Town City Bowl', 'Bjorn', 'on_site', 'Cape Town', 'Western Cape'),
+        ('Sun Square Cape Town City Bowl', 'Bjorn', 'on_site', 'Cape Town', 'Western Cape'),
+        ('Cape Grace', 'Bjorn', 'on_site', 'Cape Town', 'Western Cape'),
+        ('Garden Court Victoria Junction', 'Nicholas', 'on_site', 'Cape Town', 'Western Cape'),
+        ('Garden Court Nelson Mandela Boulevard', 'Nicholas', 'on_site', 'Cape Town', 'Western Cape'),
+        ('Sun Square Cape Town Gardens', 'Nicholas', 'on_site', 'Cape Town', 'Western Cape'),
+        ('SS Cape Sun', 'Nicholas', 'on_site', 'Cape Town', 'Western Cape'),
+        ('SS Waterfront', 'Nicholas', 'on_site', 'Cape Town', 'Western Cape'),
+        # Far reach / Teams split
+        ('Beverly Hills Hotel', 'Chris', 'teams', 'Umhlanga', 'KwaZulu-Natal'),
+        ('Umhlanga Sands Resort', 'Chris', 'teams', 'Umhlanga', 'KwaZulu-Natal'),
+        ('Suncoast Hotel and Towers', 'Chris', 'teams', 'Durban', 'KwaZulu-Natal'),
+        ('The Ridge Hotel', 'Chris', 'teams', 'KwaZulu-Natal', 'KwaZulu-Natal'),
+        ('Stay Easy Pietermaritzburg', 'Kudzayi', 'teams', 'Pietermaritzburg', 'KwaZulu-Natal'),
+        ('Garden Court South Beach', 'Kudzayi', 'teams', 'Durban', 'KwaZulu-Natal'),
+        ('GC South Beach Durban', 'Kudzayi', 'teams', 'Durban', 'KwaZulu-Natal'),
+        ('The Edward', 'Kudzayi', 'teams', 'Durban', 'KwaZulu-Natal'),
+        ('The Edward Durban', 'Kudzayi', 'teams', 'Durban', 'KwaZulu-Natal'),
+        ('Garden Court Marine Parade', 'Kudzayi', 'teams', 'Durban', 'KwaZulu-Natal'),
+        ('GC Marine Parade Durban', 'Kudzayi', 'teams', 'Durban', 'KwaZulu-Natal'),
+        ('Southern Sun Elangeni & Maharani', 'Bjorn', 'teams', 'Durban', 'KwaZulu-Natal'),
+        ('SS Elangeni & Maharani Durban', 'Bjorn', 'teams', 'Durban', 'KwaZulu-Natal'),
+        ('Fancourt', 'Bjorn', 'teams', 'George', 'Western Cape'),
+        ('Garden Court Kings Beach', 'Bjorn', 'teams', 'Gqeberha', 'Eastern Cape'),
+        ('Southern Sun The Marine', 'Bjorn', 'teams', 'Gqeberha', 'Eastern Cape'),
+        ('Hemingways Hotel', 'Nicholas', 'teams', 'East London', 'Eastern Cape'),
+        ('Garden Court East London', 'Nicholas', 'teams', 'East London', 'Eastern Cape'),
+        ('Garden Court Mthatha', 'Nicholas', 'teams', 'Mthatha', 'Eastern Cape'),
+        ('Garden Court Kimberley', 'Nicholas', 'teams', 'Kimberley', 'Northern Cape'),
+        ('Garden Court Ulundi', 'Nicholas', 'teams', 'Ulundi', 'KwaZulu-Natal'),
+        ('Hotel Cardosa', 'Nicholas', 'teams', 'Maputo', 'Mozambique'),
+        ('Southern Sun Maputo', 'Nicholas', 'teams', 'Maputo', 'Mozambique'),
+        ('Hazyview Sun', 'Nicholas', 'teams', 'Hazyview', 'Mpumalanga'),
+        ('Sabi River Sun Resort', 'Nicholas', 'teams', 'Hazyview', 'Mpumalanga'),
+        ('Kwa Maritane Bush Lodge', 'Nicholas', 'teams', 'Pilanesberg', 'North West'),
+        ('Garden Court Polokwane', 'Nicholas', 'teams', 'Polokwane', 'Limpopo'),
+        ('2Ten Hotel and Convention Centre', 'Nicholas', 'teams', 'Sibasa', 'Limpopo'),
+    ]
+    for name, owner, vtype, city, province in allocations:
+        _upsert_support_site(name, owner, vtype, city=city, province=province, status='active')
+
+    db.session.commit()
+    print('  Support allocations: current team and active schedule applied')
 def init_db():
     with app.app_context():
         _ensure_reference_docs_folder()
@@ -4668,6 +5013,7 @@ def init_db():
         # Seed / upgrade the official site registry (runs every boot; safe to re-run)
         _seed_official_site_registry()
         _seed_standby_team_members()
+        _seed_support_allocations()
 
         # ── Seed users from SEED_USERS env var (runs on every startup; safe to leave set) ──
         # Format: email:password:role,email2:password2:role2
