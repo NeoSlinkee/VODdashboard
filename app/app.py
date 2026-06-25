@@ -170,6 +170,26 @@ DEFAULT_PUBLIC_HOLIDAYS = {
 
 ESCALATION_TARGETS = ['Dexter', 'Armand']
 
+VISIT_TYPE_LABELS = {
+    'on_site': 'On-site',
+    'teams': 'Teams / Remote',
+    'within_reach': 'On-site',
+    'far_reach': 'Teams / Remote',
+}
+
+
+def normalize_visit_type(value):
+    raw = (value or '').strip().lower().replace('-', '_').replace(' ', '_')
+    if raw in ('teams', 'remote', 'team_remote', 'teams_remote', 'teams_check_in', 'far_reach'):
+        return 'teams'
+    if raw in ('on_site', 'onsite', 'site_visit', 'physical', 'within_reach'):
+        return 'on_site'
+    return 'on_site'
+
+
+def visit_type_label(value):
+    return VISIT_TYPE_LABELS.get(value, VISIT_TYPE_LABELS.get(normalize_visit_type(value), 'On-site'))
+
 
 # Build matching indexes for exact, normalized, and fuzzy site matching.
 SITE_BY_CANONICAL = {}
@@ -283,6 +303,7 @@ def inject_brand():
         'APP_NAME': get_config('app_name', 'VOD Operations Portal'),
         'APP_LOGO': get_config('app_logo'),       # base64 data-URI or None
         'COMPANY_NAME': get_config('company_name', 'VODGroup'),
+        'visit_type_label': visit_type_label,
     }
 
 
@@ -334,7 +355,10 @@ class Site(db.Model):
     name        = db.Column(db.String(200), nullable=False, unique=True)
     brand       = db.Column(db.String(100))          # Property group / brand
     city        = db.Column(db.String(100))
-    region      = db.Column(db.String(50))            # 'within_reach' | 'far_reach'
+    region      = db.Column(db.String(50))            # legacy: 'within_reach' | 'far_reach'
+    visit_type  = db.Column(db.String(20), default='on_site')  # 'on_site' | 'teams'
+    monthly_requirement = db.Column(db.Integer, default=1)
+    allocation_month = db.Column(db.String(7))  # YYYY-MM for imported monthly allocation
     ruckus_zone_name = db.Column(db.String(200))      # SmartZone alias for CSV matching
     assigned_agent_id = db.Column(db.Integer, db.ForeignKey('agent.id'), nullable=True)
     priority_level = db.Column(db.String(20), default='normal')  # low / normal / high
@@ -387,9 +411,19 @@ class SiteVisit(db.Model):
     site_name = db.Column(db.String(200))  # Fallback if site not in DB
     location = db.Column(db.String(200))
     date = db.Column(db.Date, nullable=False)
+    visit_type = db.Column(db.String(20), default='on_site')
+    contact_person = db.Column(db.String(200))
     discussion_topics = db.Column(db.Text)
     info_obtained = db.Column(db.Text)
+    issues_raised = db.Column(db.Text)
+    opportunities_identified = db.Column(db.Text)
+    follow_up_required = db.Column(db.Boolean, default=False)
     follow_up_actions = db.Column(db.Text)
+    follow_up_owner = db.Column(db.String(120))
+    follow_up_due_date = db.Column(db.Date)
+    notes = db.Column(db.Text)
+    attachment_filename = db.Column(db.String(255))
+    attachment_original_filename = db.Column(db.String(255))
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
     agent = db.relationship('Agent', backref='site_visits')
@@ -1601,17 +1635,17 @@ def site_health():
 @app.route('/sites')
 @login_required
 def sites():
-    reach_filter    = request.args.get('reach', '')
-    agent_filter    = request.args.get('agent', '')
-    priority_filter = request.args.get('priority', '')
-    city_filter     = request.args.get('city', '')
-    show_inactive   = request.args.get('show_inactive') == '1'
+    visit_type_filter = request.args.get('visit_type', request.args.get('reach', ''))
+    agent_filter      = request.args.get('agent', '')
+    priority_filter   = request.args.get('priority', '')
+    city_filter       = request.args.get('city', '')
+    show_inactive     = request.args.get('show_inactive') == '1'
 
     q = Site.query
     if not show_inactive:
         q = q.filter_by(active=True)
-    if reach_filter:
-        q = q.filter(Site.region == reach_filter)
+    if visit_type_filter:
+        q = q.filter(Site.visit_type == normalize_visit_type(visit_type_filter))
     if agent_filter:
         q = q.filter(Site.assigned_agent_id == int(agent_filter))
     if priority_filter:
@@ -1619,25 +1653,33 @@ def sites():
     if city_filter:
         q = q.filter(Site.city == city_filter)
 
-    all_sites = q.order_by(Site.region, Site.name).all()
-
-    within_reach = [s for s in all_sites if s.region == 'within_reach']
-    far_reach    = [s for s in all_sites if s.region == 'far_reach']
+    all_sites = q.order_by(Site.visit_type, Site.name).all()
+    on_site_sites = [s for s in all_sites if normalize_visit_type(s.visit_type or s.region) == 'on_site']
+    teams_sites = [s for s in all_sites if normalize_visit_type(s.visit_type or s.region) == 'teams']
     inactive_count = Site.query.filter_by(active=False).count()
+
+    site_ids = [s.id for s in all_sites]
+    latest_visits = {}
+    if site_ids:
+        visits = SiteVisit.query.filter(SiteVisit.site_id.in_(site_ids)).order_by(SiteVisit.date.desc()).all()
+        for visit in visits:
+            if visit.site_id and visit.site_id not in latest_visits:
+                latest_visits[visit.site_id] = visit
 
     agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
     cities = [r[0] for r in db.session.query(Site.city).filter(
         Site.city != None, Site.city != '').distinct().order_by(Site.city).all()]
 
     return render_template('sites.html',
-        within_reach=within_reach,
-        far_reach=far_reach,
+        on_site_sites=on_site_sites,
+        teams_sites=teams_sites,
         all_sites=all_sites,
+        latest_visits=latest_visits,
         agents=agents,
         cities=cities,
         show_inactive=show_inactive,
         inactive_count=inactive_count,
-        reach_filter=reach_filter,
+        visit_type_filter=visit_type_filter,
         agent_filter=agent_filter,
         priority_filter=priority_filter,
         city_filter=city_filter,
@@ -1654,17 +1696,21 @@ def add_site():
             flash('Site name is required.', 'warning')
             return render_template('add_site.html', agents=agents)
         agent_id_raw = request.form.get('assigned_agent_id', '').strip()
+        visit_type = normalize_visit_type(request.form.get('visit_type'))
         site = Site(
-            name              = name,
-            brand             = request.form.get('brand', '').strip() or None,
-            city              = request.form.get('city', '').strip() or None,
-            region            = request.form.get('region', 'within_reach'),
-            ruckus_zone_name  = request.form.get('ruckus_zone_name', '').strip() or name,
-            assigned_agent_id = int(agent_id_raw) if agent_id_raw.isdigit() else None,
-            priority_level    = request.form.get('priority_level', 'normal'),
-            total_aps         = int(request.form.get('total_aps', 0) or 0),
-            notes             = request.form.get('notes', '').strip() or None,
-            active            = True,
+            name=name,
+            brand=request.form.get('brand', '').strip() or None,
+            city=request.form.get('city', '').strip() or None,
+            region='within_reach' if visit_type == 'on_site' else 'far_reach',
+            visit_type=visit_type,
+            monthly_requirement=int(request.form.get('monthly_requirement', 1) or 1),
+            allocation_month=request.form.get('allocation_month', '').strip() or None,
+            ruckus_zone_name=request.form.get('ruckus_zone_name', '').strip() or name,
+            assigned_agent_id=int(agent_id_raw) if agent_id_raw.isdigit() else None,
+            priority_level=request.form.get('priority_level', 'normal'),
+            total_aps=int(request.form.get('total_aps', 0) or 0),
+            notes=request.form.get('notes', '').strip() or None,
+            active=True,
         )
         db.session.add(site)
         db.session.commit()
@@ -1676,19 +1722,22 @@ def add_site():
 @app.route('/sites/<int:id>/edit', methods=['GET', 'POST'])
 @login_required
 def edit_site(id):
-    site   = Site.query.get_or_404(id)
+    site = Site.query.get_or_404(id)
     agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
     if request.method == 'POST':
         agent_id_raw = request.form.get('assigned_agent_id', '').strip()
-        site.name              = request.form.get('name', site.name).strip()
-        site.brand             = request.form.get('brand', '').strip() or None
-        site.city              = request.form.get('city', '').strip() or None
-        site.region            = request.form.get('region', site.region)
-        site.ruckus_zone_name  = request.form.get('ruckus_zone_name', '').strip() or site.name
+        site.name = request.form.get('name', site.name).strip()
+        site.brand = request.form.get('brand', '').strip() or None
+        site.city = request.form.get('city', '').strip() or None
+        site.visit_type = normalize_visit_type(request.form.get('visit_type', site.visit_type or site.region))
+        site.region = 'within_reach' if site.visit_type == 'on_site' else 'far_reach'
+        site.monthly_requirement = int(request.form.get('monthly_requirement', site.monthly_requirement or 1) or 1)
+        site.allocation_month = request.form.get('allocation_month', '').strip() or None
+        site.ruckus_zone_name = request.form.get('ruckus_zone_name', '').strip() or site.name
         site.assigned_agent_id = int(agent_id_raw) if agent_id_raw.isdigit() else None
-        site.priority_level    = request.form.get('priority_level', 'normal')
-        site.total_aps         = int(request.form.get('total_aps', 0) or 0)
-        site.notes             = request.form.get('notes', '').strip() or None
+        site.priority_level = request.form.get('priority_level', 'normal')
+        site.total_aps = int(request.form.get('total_aps', 0) or 0)
+        site.notes = request.form.get('notes', '').strip() or None
         db.session.commit()
         flash(f'Site "{site.name}" updated.', 'success')
         return redirect(url_for('sites'))
@@ -1698,19 +1747,65 @@ def edit_site(id):
 @app.route('/sites/import', methods=['GET', 'POST'])
 @login_required
 def import_sites():
-    """Bulk import sites from JSON."""
+    """Bulk import site allocations from CSV, or fallback JSON site lists."""
+    agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
     if request.method == 'POST':
+        uploaded = request.files.get('allocation_csv')
+        if uploaded and uploaded.filename:
+            raw = uploaded.read().decode('utf-8-sig')
+            reader = csv.DictReader(StringIO(raw))
+            created = updated = skipped = 0
+            for row in reader:
+                cleaned = {(k or '').strip().lower().replace(' ', '_'): (v or '').strip() for k, v in row.items()}
+                site_name = cleaned.get('site_name') or cleaned.get('site') or cleaned.get('name')
+                if not site_name:
+                    skipped += 1
+                    continue
+
+                agent_name = cleaned.get('support_person') or cleaned.get('assigned_support_person') or cleaned.get('agent') or cleaned.get('engineer')
+                assigned_agent = None
+                if agent_name:
+                    assigned_agent = Agent.query.filter(db.func.lower(Agent.name) == agent_name.lower()).first()
+
+                visit_type = normalize_visit_type(cleaned.get('visit_type') or cleaned.get('type') or cleaned.get('reach'))
+                site = Site.query.filter(db.func.lower(Site.name) == site_name.lower()).first()
+                if not site:
+                    site = Site(name=site_name, active=True)
+                    db.session.add(site)
+                    created += 1
+                else:
+                    updated += 1
+
+                site.brand = cleaned.get('group') or cleaned.get('customer') or cleaned.get('brand') or site.brand
+                site.city = cleaned.get('physical_location') or cleaned.get('location') or cleaned.get('city') or site.city
+                site.region = 'within_reach' if visit_type == 'on_site' else 'far_reach'
+                site.visit_type = visit_type
+                site.monthly_requirement = int(cleaned.get('monthly_requirement') or cleaned.get('frequency') or site.monthly_requirement or 1)
+                site.allocation_month = cleaned.get('month') or cleaned.get('allocation_month') or site.allocation_month
+                site.notes = cleaned.get('notes') or site.notes
+                site.ruckus_zone_name = cleaned.get('ruckus_zone_name') or site.ruckus_zone_name or site.name
+                if assigned_agent:
+                    site.assigned_agent_id = assigned_agent.id
+
+            db.session.commit()
+            flash(f'Allocation import complete: {created} created, {updated} updated, {skipped} skipped.', 'success')
+            return redirect(url_for('sites'))
+
         try:
-            data = json.loads(request.form['sites_json'])
+            data = json.loads(request.form.get('sites_json', '{}'))
             count = 0
             for region, site_list in data.items():
+                visit_type = normalize_visit_type(region)
                 for site_name in site_list:
                     existing = Site.query.filter_by(name=site_name).first()
                     if not existing:
                         site = Site(
                             name=site_name,
-                            region=region,
-                            ruckus_zone_name=site_name
+                            region='within_reach' if visit_type == 'on_site' else 'far_reach',
+                            visit_type=visit_type,
+                            ruckus_zone_name=site_name,
+                            monthly_requirement=1,
+                            active=True,
                         )
                         db.session.add(site)
                         count += 1
@@ -1718,9 +1813,8 @@ def import_sites():
             flash(f'Imported {count} new sites.', 'success')
             return redirect(url_for('sites'))
         except Exception as e:
-            flash(f'Error: {str(e)}', 'danger')
-    return render_template('import_sites.html')
-
+            flash(f'Import failed: {str(e)}', 'danger')
+    return render_template('import_sites.html', agents=agents)
 
 @app.route('/sites/<int:id>/toggle')
 @login_required
@@ -1883,18 +1977,24 @@ def site_visits():
     query = SiteVisit.query
     if agent_id:
         query = query.filter_by(agent_id=agent_id)
-    visits = query.order_by(SiteVisit.date.desc()).limit(50).all()
+    visits = query.order_by(SiteVisit.date.desc()).limit(100).all()
     return render_template('site_visits.html', visits=visits)
+
 
 @app.route('/site-visits/add', methods=['GET', 'POST'])
 def add_site_visit():
-    agents = Agent.query.filter_by(active=True).all()
-    all_sites = Site.query.filter_by(active=True).order_by(Site.name).all()
+    active_agent_id = get_active_agent_id()
+    if active_agent_id:
+        agents = Agent.query.filter_by(id=active_agent_id).all()
+        all_sites = Site.query.filter_by(active=True, assigned_agent_id=active_agent_id).order_by(Site.name).all()
+    else:
+        agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
+        all_sites = Site.query.filter_by(active=True).order_by(Site.name).all()
 
     if request.method == 'POST':
         site_id = request.form.get('site_id')
         site_name = request.form.get('site_name', '').strip()
-        # 'other' means user typed a custom name; numeric means a known site
+        site_obj = None
         if site_id and site_id != 'other':
             try:
                 site_obj = Site.query.get(int(site_id))
@@ -1904,26 +2004,46 @@ def add_site_visit():
         else:
             site_id = None
 
+        attachment = request.files.get('attachment')
+        stored_attachment = None
+        original_attachment = None
+        if attachment and attachment.filename:
+            _ensure_reference_docs_folder()
+            original_attachment = attachment.filename
+            safe_attachment = secure_filename(attachment.filename)
+            stored_attachment = f"visit_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}_{safe_attachment}"
+            attachment.save(os.path.join(app.config['REFERENCE_DOCS_FOLDER'], stored_attachment))
+
+        follow_up_due = _parse_iso_date(request.form.get('follow_up_due_date', '').strip())
         visit = SiteVisit(
-            agent_id=request.form['agent_id'],
+            agent_id=active_agent_id or request.form['agent_id'],
             site_id=int(site_id) if site_id else None,
             site_name=site_name,
             location=request.form.get('location', '').strip() or None,
             date=datetime.strptime(request.form['date'], '%Y-%m-%d').date(),
+            visit_type=normalize_visit_type(request.form.get('visit_type') or (site_obj.visit_type if site_obj else None)),
+            contact_person=request.form.get('contact_person', '').strip() or None,
             discussion_topics=request.form.get('discussion_topics', ''),
             info_obtained=request.form.get('info_obtained', ''),
-            follow_up_actions=request.form.get('follow_up_actions', '')
+            issues_raised=request.form.get('issues_raised', ''),
+            opportunities_identified=request.form.get('opportunities_identified', ''),
+            follow_up_required=request.form.get('follow_up_required') == 'yes',
+            follow_up_actions=request.form.get('follow_up_actions', ''),
+            follow_up_owner=request.form.get('follow_up_owner', '').strip() or None,
+            follow_up_due_date=follow_up_due,
+            notes=request.form.get('notes', ''),
+            attachment_filename=stored_attachment,
+            attachment_original_filename=original_attachment,
         )
         db.session.add(visit)
         db.session.commit()
-        # Keep the weekly report summary in sync
         week_ending = get_week_ending(datetime.combine(visit.date, datetime.min.time()))
         generate_weekly_report_auto(visit.agent_id, week_ending)
-        flash('Site visit logged.', 'success')
+        flash('Visit/check-in logged.', 'success')
         return redirect(url_for('site_visits'))
 
     return render_template('add_site_visit.html',
-        agents=agents, sites=all_sites, today=datetime.now().strftime('%Y-%m-%d'))
+        agents=agents, sites=all_sites, today=datetime.now().strftime('%Y-%m-%d'), active_agent_id=active_agent_id)
 
 @app.route('/service-calls')
 def service_calls():
@@ -2451,6 +2571,152 @@ def export_summary():
         headers={'Content-Disposition': f'attachment; filename=summary_{week_ending}.csv'}
     )
 
+
+@app.route('/monthly-report')
+def monthly_report():
+    import calendar as cal_mod
+    selected_month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    try:
+        year, month = [int(part) for part in selected_month.split('-', 1)]
+        first_day = datetime(year, month, 1).date()
+    except Exception:
+        first_day = datetime.now().replace(day=1).date()
+        selected_month = first_day.strftime('%Y-%m')
+    last_day = first_day.replace(day=cal_mod.monthrange(first_day.year, first_day.month)[1])
+
+    visits = SiteVisit.query.filter(SiteVisit.date >= first_day, SiteVisit.date <= last_day).order_by(SiteVisit.date.desc()).all()
+    on_site_visits = [v for v in visits if normalize_visit_type(v.visit_type) == 'on_site']
+    teams_visits = [v for v in visits if normalize_visit_type(v.visit_type) == 'teams']
+
+    assigned_sites = Site.query.filter_by(active=True).filter(Site.monthly_requirement > 0).order_by(Site.name).all()
+    completed_site_ids = {v.site_id for v in visits if v.site_id}
+    missed_sites = [s for s in assigned_sites if s.id not in completed_site_ids]
+    open_followups = [v for v in visits if v.follow_up_required]
+
+    agents = Agent.query.filter_by(active=True).order_by(Agent.name).all()
+    visits_by_agent = []
+    for agent in agents:
+        agent_visits = [v for v in visits if v.agent_id == agent.id]
+        visits_by_agent.append({
+            'agent': agent,
+            'on_site': len([v for v in agent_visits if normalize_visit_type(v.visit_type) == 'on_site']),
+            'teams': len([v for v in agent_visits if normalize_visit_type(v.visit_type) == 'teams']),
+            'total': len(agent_visits),
+        })
+
+    public_holidays = get_public_holiday_dates()
+    rates = {
+        'weekday': float(get_config('standby_rate_weekday') or 0),
+        'saturday': float(get_config('standby_rate_saturday') or 0),
+        'sunday': float(get_config('standby_rate_sunday') or 0),
+        'public_holiday': float(get_config('standby_rate_public_holiday') or 0),
+    }
+    roster_entries = DutyRoster.query.filter(DutyRoster.date >= first_day, DutyRoster.date <= last_day).all()
+    standby_by_agent = {}
+    for entry in roster_entries:
+        day_type = _day_type_for_date(entry.date, public_holidays)
+        shift = _shift_window_for_day_type(day_type)
+        row = standby_by_agent.setdefault(entry.agent_name, {'days': 0, 'hours': 0.0, 'amount': 0.0})
+        row['days'] += 1
+        row['hours'] += shift['hours']
+        row['amount'] += rates.get(day_type, 0)
+
+    tickets = TicketStats.query.filter(TicketStats.date >= first_day, TicketStats.date <= last_day).all()
+    ticket_totals = {
+        'handled': sum(t.tickets_handled or 0 for t in tickets),
+        'closed': sum(t.tickets_closed or 0 for t in tickets),
+        'escalated': sum(t.tickets_escalated or 0 for t in tickets),
+        'pending': sum(t.tickets_pending or 0 for t in tickets if t.tickets_pending is not None),
+    }
+
+    return render_template('monthly_report.html',
+        selected_month=selected_month,
+        month_name=cal_mod.month_name[first_day.month],
+        year=first_day.year,
+        visits=visits,
+        on_site_visits=on_site_visits,
+        teams_visits=teams_visits,
+        assigned_sites=assigned_sites,
+        missed_sites=missed_sites,
+        open_followups=open_followups,
+        visits_by_agent=visits_by_agent,
+        standby_by_agent=standby_by_agent,
+        ticket_totals=ticket_totals)
+
+
+@app.route('/monthly-report/export')
+def export_monthly_report():
+    import calendar as cal_mod
+    selected_month = request.args.get('month', datetime.now().strftime('%Y-%m'))
+    try:
+        year, month = [int(part) for part in selected_month.split('-', 1)]
+        first_day = datetime(year, month, 1).date()
+    except Exception:
+        first_day = datetime.now().replace(day=1).date()
+        selected_month = first_day.strftime('%Y-%m')
+    last_day = first_day.replace(day=cal_mod.monthrange(first_day.year, first_day.month)[1])
+
+    visits = SiteVisit.query.filter(SiteVisit.date >= first_day, SiteVisit.date <= last_day).order_by(SiteVisit.date.asc()).all()
+    assigned_sites = Site.query.filter_by(active=True).filter(Site.monthly_requirement > 0).order_by(Site.name).all()
+    completed_site_ids = {v.site_id for v in visits if v.site_id}
+    missed_sites = [s for s in assigned_sites if s.id not in completed_site_ids]
+    followups = [v for v in visits if v.follow_up_required]
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(['Monthly Management Report', selected_month])
+    writer.writerow([])
+    writer.writerow(['Summary'])
+    writer.writerow(['On-site visits completed', len([v for v in visits if normalize_visit_type(v.visit_type) == 'on_site'])])
+    writer.writerow(['Teams / remote check-ins completed', len([v for v in visits if normalize_visit_type(v.visit_type) == 'teams'])])
+    writer.writerow(['Sites missed', len(missed_sites)])
+    writer.writerow(['Open follow-ups', len(followups)])
+    writer.writerow([])
+    writer.writerow(['Completed visits/check-ins'])
+    writer.writerow(['Date', 'Support person', 'Site', 'Visit type', 'Contact', 'Issues raised', 'Opportunities', 'Follow-up owner', 'Follow-up due'])
+    for visit in visits:
+        writer.writerow([
+            visit.date.isoformat(),
+            visit.agent.name if visit.agent else '',
+            visit.site_name or (visit.site.name if visit.site else ''),
+            visit_type_label(visit.visit_type),
+            visit.contact_person or '',
+            visit.issues_raised or '',
+            visit.opportunities_identified or '',
+            visit.follow_up_owner or '',
+            visit.follow_up_due_date.isoformat() if visit.follow_up_due_date else '',
+        ])
+    writer.writerow([])
+    writer.writerow(['Missed allocated sites'])
+    writer.writerow(['Support person', 'Site', 'Visit type', 'Monthly requirement', 'Notes'])
+    for site in missed_sites:
+        writer.writerow([
+            site.assigned_agent.name if site.assigned_agent else 'Unassigned',
+            site.name,
+            visit_type_label(site.visit_type or site.region),
+            site.monthly_requirement or 1,
+            site.notes or '',
+        ])
+
+    return Response(
+        output.getvalue(),
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename=monthly_management_{selected_month}.csv'}
+    )
+
+
+@app.route('/site-visits/<int:id>/attachment')
+def download_site_visit_attachment(id):
+    visit = SiteVisit.query.get_or_404(id)
+    if not visit.attachment_filename:
+        abort(404)
+    _ensure_reference_docs_folder()
+    return send_from_directory(
+        app.config['REFERENCE_DOCS_FOLDER'],
+        visit.attachment_filename,
+        as_attachment=True,
+        download_name=visit.attachment_original_filename or visit.attachment_filename
+    )
 
 @app.route('/references')
 def references():
@@ -4076,6 +4342,9 @@ def _run_sqlite_migrations(conn):
             ('brand',             'VARCHAR(100)'),
             ('city',              'VARCHAR(100)'),
             ('assigned_agent_id', 'INTEGER'),
+            ('visit_type',        "VARCHAR(20) DEFAULT 'on_site'"),
+            ('monthly_requirement', 'INTEGER DEFAULT 1'),
+            ('allocation_month',  'VARCHAR(7)'),
             ('priority_level',    "VARCHAR(20) DEFAULT 'normal'"),
             ('aps_offline',       'INTEGER DEFAULT 0'),
             ('notes',             'TEXT'),
@@ -4087,9 +4356,22 @@ def _run_sqlite_migrations(conn):
         conn.commit()
     try:
         sv_cols = [row[1] for row in conn.execute(_text('PRAGMA table_info(site_visit)'))]
-        if 'location' not in sv_cols:
-            conn.execute(_text('ALTER TABLE site_visit ADD COLUMN location VARCHAR(200)'))
-            conn.commit()
+        for _col, _type in [
+            ('location', 'VARCHAR(200)'),
+            ('visit_type', "VARCHAR(20) DEFAULT 'on_site'"),
+            ('contact_person', 'VARCHAR(200)'),
+            ('issues_raised', 'TEXT'),
+            ('opportunities_identified', 'TEXT'),
+            ('follow_up_required', 'BOOLEAN DEFAULT 0'),
+            ('follow_up_owner', 'VARCHAR(120)'),
+            ('follow_up_due_date', 'DATE'),
+            ('notes', 'TEXT'),
+            ('attachment_filename', 'VARCHAR(255)'),
+            ('attachment_original_filename', 'VARCHAR(255)'),
+        ]:
+            if _col not in sv_cols:
+                conn.execute(_text(f'ALTER TABLE site_visit ADD COLUMN {_col} {_type}'))
+                conn.commit()
     except Exception:
         conn.commit()
     try:
@@ -4145,16 +4427,32 @@ def _run_postgres_migrations(conn):
         ('brand',             'VARCHAR(100)'),
         ('city',              'VARCHAR(100)'),
         ('assigned_agent_id', 'INTEGER'),
-        ('priority_level',    "VARCHAR(20) DEFAULT 'normal'"),
+            ('visit_type',        "VARCHAR(20) DEFAULT 'on_site'"),
+            ('monthly_requirement', 'INTEGER DEFAULT 1'),
+            ('allocation_month',  'VARCHAR(7)'),
+            ('priority_level',    "VARCHAR(20) DEFAULT 'normal'"),
         ('aps_offline',       'INTEGER DEFAULT 0'),
         ('notes',             'TEXT'),
     ]:
         if not _col_exists('site', _col):
             conn.execute(_text(f'ALTER TABLE site ADD COLUMN {_col} {_type}'))
             conn.commit()
-    if not _col_exists('site_visit', 'location'):
-        conn.execute(_text('ALTER TABLE site_visit ADD COLUMN location VARCHAR(200)'))
-        conn.commit()
+    for _col, _type in [
+        ('location', 'VARCHAR(200)'),
+        ('visit_type', "VARCHAR(20) DEFAULT 'on_site'"),
+        ('contact_person', 'VARCHAR(200)'),
+        ('issues_raised', 'TEXT'),
+        ('opportunities_identified', 'TEXT'),
+        ('follow_up_required', 'BOOLEAN DEFAULT FALSE'),
+        ('follow_up_owner', 'VARCHAR(120)'),
+        ('follow_up_due_date', 'DATE'),
+        ('notes', 'TEXT'),
+        ('attachment_filename', 'VARCHAR(255)'),
+        ('attachment_original_filename', 'VARCHAR(255)'),
+    ]:
+        if not _col_exists('site_visit', _col):
+            conn.execute(_text(f'ALTER TABLE site_visit ADD COLUMN {_col} {_type}'))
+            conn.commit()
     if not _col_exists('ticket_stats', 'tickets_pending'):
         conn.execute(_text('ALTER TABLE ticket_stats ADD COLUMN tickets_pending INTEGER'))
         conn.commit()
@@ -4258,6 +4556,8 @@ def _seed_official_site_registry():
                 brand            = rec['brand'],
                 city             = rec['city'],
                 region           = rec['region'],
+                visit_type       = normalize_visit_type(rec['region']),
+                monthly_requirement = 1,
                 ruckus_zone_name = primary_alias,
                 priority_level   = 'normal',
                 active           = True,
@@ -4273,6 +4573,12 @@ def _seed_official_site_registry():
                 updated += 1
             if not site.ruckus_zone_name:
                 site.ruckus_zone_name = primary_alias
+                updated += 1
+            if not site.visit_type:
+                site.visit_type = normalize_visit_type(site.region or rec['region'])
+                updated += 1
+            if not site.monthly_requirement:
+                site.monthly_requirement = 1
                 updated += 1
     db.session.commit()
     if created or updated:

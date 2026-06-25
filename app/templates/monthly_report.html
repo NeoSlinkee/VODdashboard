@@ -1,0 +1,23 @@
+﻿{% extends 'base.html' %}
+{% block title %}Monthly Management Report - {{ selected_month }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-4">
+  <div><h2><i class="bi bi-calendar2-check"></i> Monthly Management Report</h2><p class="text-muted mb-0">{{ month_name }} {{ year }}</p></div>
+  <form method="get" class="d-flex gap-2"><input type="month" name="month" class="form-control" value="{{ selected_month }}"><button class="btn btn-outline-secondary">View</button><a href="{{ url_for('export_monthly_report', month=selected_month) }}" class="btn btn-primary"><i class="bi bi-download"></i> Export CSV</a></form>
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-md-3"><div class="card stat-card text-center success"><div class="number">{{ on_site_visits|length }}</div><div class="label">On-site Completed</div></div></div>
+  <div class="col-md-3"><div class="card stat-card text-center"><div class="number" style="color:var(--warning-color)">{{ teams_visits|length }}</div><div class="label">Remote Completed</div></div></div>
+  <div class="col-md-3"><div class="card stat-card text-center warning"><div class="number">{{ missed_sites|length }}</div><div class="label">Sites Missed</div></div></div>
+  <div class="col-md-3"><div class="card stat-card text-center"><div class="number">{{ open_followups|length }}</div><div class="label">Open Follow-ups</div></div></div>
+</div>
+<div class="row g-4">
+  <div class="col-lg-7"><div class="card"><div class="card-header"><i class="bi bi-people"></i> Activity by Support Person</div><div class="card-body p-0"><table class="table mb-0"><thead><tr><th>Support Person</th><th class="text-center">On-site</th><th class="text-center">Teams</th><th class="text-center">Total</th></tr></thead><tbody>{% for row in visits_by_agent %}<tr><td>{{ row.agent.name }}</td><td class="text-center">{{ row.on_site }}</td><td class="text-center">{{ row.teams }}</td><td class="text-center fw-semibold">{{ row.total }}</td></tr>{% endfor %}</tbody></table></div></div></div>
+  <div class="col-lg-5"><div class="card"><div class="card-header"><i class="bi bi-moon-stars"></i> Standby Summary</div><div class="card-body p-0"><table class="table mb-0"><thead><tr><th>Engineer</th><th>Days</th><th>Hours</th><th>Amount</th></tr></thead><tbody>{% for name, row in standby_by_agent.items() %}<tr><td>{{ name }}</td><td>{{ row.days }}</td><td>{{ '%.2f'|format(row.hours) }}</td><td>R{{ '%.2f'|format(row.amount) }}</td></tr>{% else %}<tr><td colspan="4" class="text-muted">No standby roster entries.</td></tr>{% endfor %}</tbody></table></div></div></div>
+</div>
+<div class="row g-4 mt-1">
+  <div class="col-lg-6"><div class="card"><div class="card-header"><i class="bi bi-exclamation-triangle"></i> Missed Allocated Sites</div><div class="card-body p-0"><table class="table mb-0"><thead><tr><th>Support Person</th><th>Site</th><th>Type</th></tr></thead><tbody>{% for site in missed_sites %}<tr><td>{{ site.assigned_agent.name if site.assigned_agent else 'Unassigned' }}</td><td>{{ site.name }}</td><td>{{ visit_type_label(site.visit_type or site.region) }}</td></tr>{% else %}<tr><td colspan="3" class="text-success">No missed allocated sites.</td></tr>{% endfor %}</tbody></table></div></div></div>
+  <div class="col-lg-6"><div class="card"><div class="card-header"><i class="bi bi-list-check"></i> Open Follow-ups</div><div class="card-body p-0"><table class="table mb-0"><thead><tr><th>Date</th><th>Site</th><th>Owner</th><th>Due</th></tr></thead><tbody>{% for visit in open_followups %}<tr><td>{{ visit.date }}</td><td>{{ visit.site_name }}</td><td>{{ visit.follow_up_owner or 'Unassigned' }}</td><td>{{ visit.follow_up_due_date or '-' }}</td></tr>{% else %}<tr><td colspan="4" class="text-success">No open follow-ups.</td></tr>{% endfor %}</tbody></table></div></div></div>
+</div>
+<div class="card mt-4"><div class="card-header"><i class="bi bi-ticket"></i> Ticket Metrics</div><div class="card-body"><div class="row text-center"><div class="col">Handled<br><strong>{{ ticket_totals.handled }}</strong></div><div class="col">Closed<br><strong>{{ ticket_totals.closed }}</strong></div><div class="col">Escalated<br><strong>{{ ticket_totals.escalated }}</strong></div><div class="col">Pending Snapshot<br><strong>{{ ticket_totals.pending }}</strong></div></div></div></div>
+{% endblock %}

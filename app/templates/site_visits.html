@@ -1,43 +1,28 @@
 ﻿{% extends 'base.html' %}
-{% block title %}Site Visits - {{ APP_NAME }}{% endblock %}
-
+{% block title %}Visits / Check-ins - {{ APP_NAME }}{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-4">
-    <h2><i class="bi bi-geo-alt"></i> Site Visits</h2>
-    <a href="{{ url_for('add_site_visit') }}" class="btn btn-primary">
-        <i class="bi bi-plus-lg"></i> Add Visit
-    </a>
+  <div><h2><i class="bi bi-geo-alt"></i> Visits / Check-ins</h2><p class="text-muted mb-0 small">On-site visits and Teams / remote engagements</p></div>
+  <a href="{{ url_for('add_site_visit') }}" class="btn btn-primary"><i class="bi bi-plus-lg"></i> Add Visit</a>
 </div>
-
-<div class="card">
-    <div class="card-body">
-        {% if visits %}
-        <table class="table table-hover">
-            <thead>
-                <tr>
-                    <th>Date</th>
-                    <th>Agent</th>
-                    <th>Site</th>
-                    <th>Location</th>
-                    <th>Discussion</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for visit in visits %}
-                <tr>
-                    <td>{{ visit.date }}</td>
-                    <td>{{ visit.agent.name }}</td>
-                    <td><strong>{{ visit.site_name or '-' }}</strong></td>
-                    <td>{{ visit.location or '-' }}</td>
-                    <td>{{ (visit.discussion_topics or '')[:50] }}{% if (visit.discussion_topics or '')|length > 50 %}...{% endif %}</td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <p class="text-muted mb-0">No site visits logged yet.</p>
-        {% endif %}
-    </div>
-</div>
+<div class="card"><div class="table-responsive">
+{% if visits %}
+<table class="table table-hover align-middle mb-0"><thead><tr><th>Date</th><th>Support Person</th><th>Site</th><th>Type</th><th>Contact</th><th>Issues / Opportunities</th><th>Follow-up</th><th>Attachment</th></tr></thead><tbody>
+{% for visit in visits %}
+<tr>
+  <td>{{ visit.date }}</td>
+  <td>{{ visit.agent.name }}</td>
+  <td><strong>{{ visit.site_name or '-' }}</strong><br><small class="text-muted">{{ visit.location or '' }}</small></td>
+  <td><span class="badge {% if visit.visit_type == 'teams' %}bg-warning text-dark{% else %}bg-success{% endif %}">{{ visit_type_label(visit.visit_type) }}</span></td>
+  <td>{{ visit.contact_person or '-' }}</td>
+  <td class="small"><strong>Issues:</strong> {{ (visit.issues_raised or '-')[:80] }}<br><strong>Opps:</strong> {{ (visit.opportunities_identified or '-')[:80] }}</td>
+  <td>{% if visit.follow_up_required %}<span class="badge bg-danger">Required</span><br><small>{{ visit.follow_up_owner or 'Unassigned' }}{% if visit.follow_up_due_date %} - {{ visit.follow_up_due_date }}{% endif %}</small>{% else %}<span class="text-muted">No</span>{% endif %}</td>
+  <td>{% if visit.attachment_filename %}<a href="{{ url_for('download_site_visit_attachment', id=visit.id) }}" class="btn btn-sm btn-outline-secondary"><i class="bi bi-paperclip"></i></a>{% else %}<span class="text-muted">-</span>{% endif %}</td>
+</tr>
+{% endfor %}
+</tbody></table>
+{% else %}
+<div class="card-body"><p class="text-muted mb-0">No visits or check-ins logged yet.</p></div>
+{% endif %}
+</div></div>
 {% endblock %}
-

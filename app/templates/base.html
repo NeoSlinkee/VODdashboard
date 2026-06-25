@@ -1,4 +1,4 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -369,6 +369,9 @@
                     {% if current_user.is_authenticated and current_user.is_admin %}
                     <a class="nav-link {{ 'active' if 'summary' in request.endpoint else '' }}" href="{{ url_for('weekly_summary') }}">
                         <i class="bi bi-bar-chart"></i> Executive Summary
+                    </a>
+                    <a class="nav-link {{ 'active' if 'monthly_report' in request.endpoint else '' }}" href="{{ url_for('monthly_report') }}">
+                        <i class="bi bi-calendar2-check"></i> Monthly Management
                     </a>
                     {% endif %}
                     <hr>
