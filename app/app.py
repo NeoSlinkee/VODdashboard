@@ -10,6 +10,7 @@ Access at: http://localhost:5000
 from functools import wraps
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, Response, send_from_directory, abort
 from flask_sqlalchemy import SQLAlchemy
+from sqlalchemy.exc import IntegrityError
 from flask_login import LoginManager, UserMixin, login_user, logout_user, login_required, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime, timedelta
@@ -5048,14 +5049,18 @@ def init_db():
                     db.session.commit()
                     print(f"  SEED_USERS: created  {_email}  ({_role})")
 
-        # Create initial superadmin only if NO users exist at all and SEED_USERS is not set.
-        # This runs once on a brand-new database.
-        elif User.query.count() == 0:
+        # Create initial superadmin only if it does not already exist and SEED_USERS is not set.
+        # This keeps startup idempotent across restarts and concurrent worker boots.
+        elif not User.query.filter_by(email='admin@vodgroup.co.za').first():
             admin = User(email='admin@vodgroup.co.za', role='superadmin')
             admin.set_password('ChangeMe@2026!')
             db.session.add(admin)
-            db.session.commit()
-            print("  Created initial superadmin: admin@vodgroup.co.za  (change password immediately)")
+            try:
+                db.session.commit()
+                print("  Created initial superadmin: admin@vodgroup.co.za  (change password immediately)")
+            except IntegrityError:
+                db.session.rollback()
+                print("  Initial superadmin already exists; skipping create")
 
 
 # ============== CLI Commands ==============
